@@ -13,7 +13,7 @@ THREADS = [
     },
 ]
 
-DEFAULT_OUTPUT = "../data/timeline.csv"
+DEFAULT_OUTPUT = "out/timeline.csv"
 
 CSV_FIELDS = [
     "comment_id",

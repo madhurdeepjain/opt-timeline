@@ -101,8 +101,8 @@ export default function DashboardPage() {
             {error}
             {error.includes("404") && (
               <p className="mt-1 text-xs opacity-80">
-                CSV not found at <code>/data/timeline.csv</code> — run the scraper first and copy
-                the output to <code>dashboard/public/data/timeline.csv</code>.
+                No data found — run the scraper first and copy the output to{" "}
+                <code>dashboard/data/timeline.csv</code>.
               </p>
             )}
           </div>

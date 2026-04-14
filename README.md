@@ -26,12 +26,12 @@ opt-timeline/
 ```bash
 cd scraper
 uv sync
-uv run scrape          # writes to ../data/timeline.csv
+uv run scrape          # writes to scraper/out/timeline.csv
 ```
 
 **2. Copy data to dashboard**
 ```bash
-cp data/timeline.csv dashboard/public/data/timeline.csv
+cp scraper/out/timeline.csv dashboard/data/timeline.csv
 ```
 
 **3. Start the dashboard**

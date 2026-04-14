@@ -5,9 +5,46 @@ import { motion, AnimatePresence } from "framer-motion";
 import { TimelineRecord } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
-import { ExternalLink, ChevronUp, ChevronDown } from "lucide-react";
+import { ExternalLink, ChevronUp, ChevronDown, Download } from "lucide-react";
 
 type SortKey = "date_applied" | "date_approved" | "days_to_approval" | "normalized_type";
+
+const EXPORT_COLUMNS: { key: keyof TimelineRecord; label: string }[] = [
+  { key: "normalized_type",           label: "Type" },
+  { key: "premium_processing",        label: "Premium Processing" },
+  { key: "date_applied",              label: "Date Applied" },
+  { key: "rfie_date",                 label: "RFIE Date" },
+  { key: "biometrics_requested_date", label: "Biometrics Requested" },
+  { key: "biometrics_completed_date", label: "Biometrics Completed" },
+  { key: "biometrics_location",       label: "Biometrics Location" },
+  { key: "noid",                      label: "NOID" },
+  { key: "noid_date",                 label: "NOID Date" },
+  { key: "date_approved",             label: "Date Approved" },
+  { key: "date_card_produced",        label: "Card Produced" },
+  { key: "date_card_shipped",         label: "Card Shipped" },
+  { key: "date_card_received",        label: "Card Received" },
+  { key: "days_to_approval",          label: "Days to Approval" },
+  { key: "days_to_card",              label: "Days to Card" },
+  { key: "country_of_citizenship",    label: "Country" },
+  { key: "subreddit",                 label: "Subreddit" },
+  { key: "permalink",                 label: "Link" },
+];
+
+function exportCSV(records: TimelineRecord[]) {
+  const escape = (v: string) => `"${(v ?? "").replace(/"/g, '""')}"`;
+  const header = EXPORT_COLUMNS.map((c) => escape(c.label)).join(",");
+  const rows = records.map((r) =>
+    EXPORT_COLUMNS.map((c) => escape(r[c.key] as string)).join(",")
+  );
+  const csv = [header, ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `opt-timeline-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 function sortRecords(records: TimelineRecord[], key: SortKey, asc: boolean) {
   return [...records].sort((a, b) => {
@@ -58,6 +95,15 @@ export function DataTable({ records }: { records: TimelineRecord[] }) {
 
   return (
     <div className="space-y-2">
+      <div className="flex justify-end">
+        <button
+          onClick={() => exportCSV(sorted)}
+          className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border hover:bg-muted"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Export {sorted.length.toLocaleString()} records
+        </button>
+      </div>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
           <thead className="bg-muted/40">

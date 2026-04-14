@@ -1,4 +1,4 @@
-# ── Python ────────────────────────────────────────────────────────────────────
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -8,26 +8,29 @@ build/
 .venv/
 .python-version
 
-# ── uv ────────────────────────────────────────────────────────────────────────
-# Keep uv.lock committed (reproducible installs); ignore the venv
+# uv
 scraper/.venv/
 
-# ── Node / Next.js ────────────────────────────────────────────────────────────
+# Node / Next.js
 node_modules/
 .next/
-out/
+dashboard/out/
 .vercel/
 
-# ── OS ────────────────────────────────────────────────────────────────────────
+# OS
 .DS_Store
 Thumbs.db
 
-# ── Editor ────────────────────────────────────────────────────────────────────
+# Editor
 .idea/
 .vscode/
 *.swp
 
-# ── Env / secrets ─────────────────────────────────────────────────────────────
+# Env / secrets
 .env
 .env.local
 .env.*.local
+
+# Data
+# Scraper output dir — only dashboard/data/timeline.csv is committed
+scraper/out/
