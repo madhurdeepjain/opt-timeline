@@ -88,9 +88,9 @@ def cli(output: str, no_merge: bool, verbose: bool) -> None:
                                 )
                     prog.update(task, description=f"Done — {seen} comments, {parsed} matched template")
                 except Exception:
-                    console.print(f"[red]Error fetching r/{sub}[/red]")
-                    if verbose:
-                        traceback.print_exc()
+                    console.print(f"[bold red]✗ Error fetching r/{sub} — aborting without writing.[/bold red]")
+                    traceback.print_exc()
+                    raise SystemExit(1)
 
     # Summary table
     tbl = Table(show_header=True, header_style="bold magenta")
