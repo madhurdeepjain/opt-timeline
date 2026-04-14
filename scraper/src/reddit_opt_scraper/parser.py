@@ -21,7 +21,12 @@ _DATE_FORMATS = [
     ("%Y-%m-%d", re.compile(r"\b\d{4}-\d{2}-\d{2}\b")),
     ("%m-%d-%Y", re.compile(r"\b\d{1,2}-\d{1,2}-\d{4}\b")),
     ("%m/%d/%y", re.compile(r"\b\d{1,2}/\d{1,2}/\d{2}\b")),
+    # Month-name formats: "Feb 2, 2026" / "February 2, 2026"
+    ("%b %d, %Y", re.compile(r"\b[A-Za-z]{3,9}\s+\d{1,2},\s*\d{4}\b")),
+    ("%B %d, %Y", re.compile(r"\b[A-Za-z]{3,9}\s+\d{1,2},\s*\d{4}\b")),
 ]
+
+_SLASH_DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
 
 
 def parse_date(value: str) -> Optional[str]:
@@ -31,6 +36,19 @@ def parse_date(value: str) -> Optional[str]:
     v = value.strip()
     if v.lower() in NULL_VALUES:
         return None
+
+    # Detect DD/MM/YYYY: if the first segment > 12 it can't be a month
+    m = _SLASH_DATE.search(v)
+    if m:
+        a, b, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if a > 12 and b <= 12:
+            try:
+                d = datetime(year, b, a)
+                if 2020 <= d.year <= 2035:
+                    return d.strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+
     for fmt, pat in _DATE_FORMATS:
         m = pat.search(v)
         if m:
