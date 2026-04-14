@@ -1,0 +1,106 @@
+"""CLI entry-point: `uv run scrape`"""
+
+import traceback
+from datetime import datetime, timezone
+from pathlib import Path
+
+import click
+import httpx
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.table import Table
+
+from .config import THREADS, DEFAULT_OUTPUT
+from .fetcher import fetch_all_comments
+from .parser import parse_comment, compute_derived, has_template_data
+from .exporter import load_existing, merge, save
+
+console = Console()
+
+_SKIP_AUTHORS = frozenset({"automoderator", "[deleted]", "opttracker_bot"})
+_SKIP_BODIES = frozenset({"[deleted]", "[removed]"})
+
+
+def _build_record(comment: dict, thread: dict) -> dict | None:
+    body: str = comment.get("body", "")
+    author: str = comment.get("author", "")
+
+    if not body or body in _SKIP_BODIES or author.lower() in _SKIP_AUTHORS:
+        return None
+
+    parsed = parse_comment(body)
+    if not has_template_data(parsed):
+        return None
+
+    created_dt = datetime.fromtimestamp(
+        comment.get("created_utc", 0), tz=timezone.utc
+    ).isoformat()
+
+    record = {
+        "comment_id": comment["id"],
+        "author": author,
+        "created_utc": created_dt,
+        "subreddit": thread["subreddit"],
+        "permalink": f"https://reddit.com{comment.get('permalink', '')}",
+        **parsed,
+        # Truncate raw text to keep CSV manageable
+        "raw_text": body[:600].replace("\n", " "),
+    }
+    return compute_derived(record)
+
+
+@click.command()
+@click.option("--output", "-o", default=DEFAULT_OUTPUT, show_default=True, help="Output CSV path")
+@click.option("--no-merge", is_flag=True, default=False, help="Overwrite instead of merging with existing CSV")
+@click.option("--verbose", "-v", is_flag=True, default=False)
+def cli(output: str, no_merge: bool, verbose: bool) -> None:
+    """Scrape OPT/STEM OPT processing timelines from Reddit and save to CSV."""
+    out_path = Path(output)
+    console.rule("[bold green]OPT Timeline Scraper[/bold green]")
+    console.print(f"Output → [cyan]{out_path}[/cyan]")
+
+    existing = {} if no_merge else load_existing(out_path)
+    if existing:
+        console.print(f"Loaded [bold]{len(existing)}[/bold] existing records")
+
+    all_fresh: list[dict] = []
+
+    with httpx.Client() as client:
+        for thread in THREADS:
+            sub = thread["subreddit"]
+            console.print(f"\n[bold]Fetching r/{sub}…[/bold]")
+            seen = parsed = 0
+
+            with Progress(SpinnerColumn(), TextColumn("{task.description}"), console=console) as prog:
+                task = prog.add_task("Starting…", total=None)
+                try:
+                    for comment in fetch_all_comments(thread, client):
+                        seen += 1
+                        prog.update(task, description=f"Comments fetched: {seen}")
+                        rec = _build_record(comment, thread)
+                        if rec:
+                            parsed += 1
+                            all_fresh.append(rec)
+                            if verbose:
+                                console.print(
+                                    f"  ✓ [{rec.get('normalized_type')}] "
+                                    f"{rec.get('date_applied')} → {rec.get('date_approved')}"
+                                )
+                    prog.update(task, description=f"Done — {seen} comments, {parsed} matched template")
+                except Exception:
+                    console.print(f"[red]Error fetching r/{sub}[/red]")
+                    if verbose:
+                        traceback.print_exc()
+
+    # Summary table
+    tbl = Table(show_header=True, header_style="bold magenta")
+    tbl.add_column("Metric")
+    tbl.add_column("Value", justify="right")
+    tbl.add_row("Fresh records parsed", str(len(all_fresh)))
+    tbl.add_row("Existing records", str(len(existing)))
+    merged = merge(existing, all_fresh)
+    tbl.add_row("Total after merge", str(len(merged)))
+    console.print(tbl)
+
+    save(merged, out_path)
+    console.print(f"\n[bold green]✓ Saved {len(merged)} records → {out_path}[/bold green]")

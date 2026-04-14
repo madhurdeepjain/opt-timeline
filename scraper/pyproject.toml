@@ -1,0 +1,20 @@
+[project]
+name = "opt-timeline-scraper"
+version = "0.1.0"
+description = "Scrape OPT/STEM OPT processing timeline data from Reddit"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "click>=8.1",
+    "rich>=13.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/reddit_opt_scraper"]
+
+[project.scripts]
+scrape = "reddit_opt_scraper.main:cli"
