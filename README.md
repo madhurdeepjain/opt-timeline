@@ -1,4 +1,4 @@
-# opt-timeline
+# OPT Timeline Tracker
 
 Community-sourced OPT and STEM OPT EAD processing timelines, aggregated from Reddit megathreads and visualised in a dashboard.
 
@@ -44,8 +44,6 @@ npm run dev            # → http://localhost:3000
 ## Automated updates (GitHub Actions + Vercel)
 
 The workflow in `.github/workflows/update-data.yml` runs the scraper daily at 06:00 UTC, commits the updated CSV, and triggers a Vercel redeploy automatically.
-
-**Required:** set workflow permissions to **Read and write** in _Settings → Actions → General_.
 
 ## Contributing
 
