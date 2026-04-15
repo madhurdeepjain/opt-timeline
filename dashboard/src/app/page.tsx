@@ -26,6 +26,7 @@ import {
   StatusFunnelChart,
 } from "@/components/charts";
 import { DataTable } from "@/components/data-table";
+import { Explorer } from "@/components/explorer";
 import { Filters } from "@/components/filters";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -152,6 +153,12 @@ export default function DashboardPage() {
 
             {/* Funnel — full width */}
             <StatusFunnelChart data={funnelData(filtered)} />
+
+            {/* Custom Data Explorer */}
+            <section className="space-y-4">
+              <h2 className="text-base font-semibold">Interactive Explorer</h2>
+              <Explorer records={filtered} />
+            </section>
 
             {/* Data table */}
             <section className="space-y-4">
