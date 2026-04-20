@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1e3a8a" />
+    </linearGradient>
+  </defs>
+  
+  <!-- App Icon Background -->
+  <rect width="100" height="100" rx="24" fill="url(#bg)" />
+  
+  <!-- Document Shape -->
+  <path d="M28 22 h32 l16 16 v40 a4 4 0 0 1 -4 4 H28 a4 4 0 0 1 -4 -4 V26 a4 4 0 0 1 4 -4 Z" fill="#ffffff" />
+  
+  <!-- Document Fold Effect -->
+  <path d="M60 22 v16 h16 Z" fill="#e2e8f0" />
+  
+  <!-- Vertical Timeline Track -->
+  <line x1="40" y1="42" x2="40" y2="70" stroke="#cbd5e1" stroke-width="2" />
+  
+  <!-- Step 1 (Completed) -->
+  <circle cx="40" cy="42" r="4.5" fill="#10b981" />
+  <line x1="50" y1="42" x2="66" y2="42" stroke="#e2e8f0" stroke-width="3" stroke-linecap="round"/>
+  
+  <!-- Step 2 (In progress) -->
+  <circle cx="40" cy="56" r="4.5" fill="#f59e0b" />
+  <circle cx="40" cy="56" r="2" fill="#ffffff" />
+  <line x1="50" y1="56" x2="60" y2="56" stroke="#e2e8f0" stroke-width="3" stroke-linecap="round"/>
+  
+  <!-- Step 3 (Pending) -->
+  <circle cx="40" cy="70" r="3.5" fill="#cbd5e1" />
+  <line x1="50" y1="70" x2="56" y2="70" stroke="#e2e8f0" stroke-width="3" stroke-linecap="round"/>
+</svg>
