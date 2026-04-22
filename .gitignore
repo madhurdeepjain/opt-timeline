@@ -16,6 +16,7 @@ node_modules/
 .next/
 dashboard/out/
 .vercel/
+*.tsbuildinfo
 
 # OS
 .DS_Store

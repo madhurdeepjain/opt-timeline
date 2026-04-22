@@ -4,7 +4,8 @@ import Papa from "papaparse";
 import { TimelineRecord, DashboardStats, FilterState } from "./types";
 import { avg } from "./utils";
 
-const CSV_PATH = "/api/data";
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const CSV_PATH = `${BASE_PATH}/api/data`;
 
 export async function fetchRecords(): Promise<TimelineRecord[]> {
   const res = await fetch(CSV_PATH, { cache: "no-store" });
