@@ -15,7 +15,6 @@ import {
   funnelData,
   typeBreakdownData,
 } from "@/lib/data";
-import { formatDate } from "@/lib/utils";
 
 import { StatsCards } from "@/components/stats-cards";
 import {
@@ -28,6 +27,7 @@ import {
 import { DataTable } from "@/components/data-table";
 import { Explorer } from "@/components/explorer";
 import { Filters } from "@/components/filters";
+import { PersonalTimeline } from "@/components/personal-timeline";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const DEFAULT_FILTERS: FilterState = {
@@ -138,6 +138,9 @@ export default function DashboardPage() {
 
             {/* Stats cards */}
             <StatsCards stats={stats} />
+
+            {/* Personal case timeline */}
+            <PersonalTimeline />
 
             {/* Charts row 1 */}
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
