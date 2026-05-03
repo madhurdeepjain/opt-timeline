@@ -17,7 +17,9 @@ const PERSONAL_TIMELINE: PersonalEvent[] = [
   { label: "Biometrics Appointment", date: "2026-04-06", done: true },
   { label: "Upgraded to Premium Processing", date: "2026-04-14", done: true },
   { label: "Received Email Approval", date: "2026-04-21", done: true },
-  { label: "Waiting for EAD Card", date: "Pending", done: false },
+  { label: "Approval in USCIS Portal", date: "2026-04-23", done: true },
+  { label: "EAD Card Produced (notification)", date: "2026-04-28", done: true },
+  { label: "EAD Card Received", date: "2026-05-02", done: true },
 ];
 
 function formatEventDate(value: string): string {
