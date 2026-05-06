@@ -10,6 +10,7 @@ const ibmPlexSans = IBM_Plex_Sans({
 })
 
 const siteUrl = 'https://www.mdjain.com/opt-timeline'
+const ogImage = { url: `${siteUrl}/opengraph-image`, width: 1200, height: 630, type: 'image/png' }
 
 export const metadata: Metadata = {
   // metadataBase must be the domain root — absolute paths like /opengraph-image
@@ -26,11 +27,13 @@ export const metadata: Metadata = {
     siteName: 'OPT Timeline',
     title: 'OPT Timeline',
     description: 'Real OPT & STEM OPT approval timelines crowdsourced from Reddit — 2000+ records from r/f1visa and r/USCIS.',
+    images: [ogImage],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'OPT Timeline',
     description: 'Real OPT & STEM OPT approval timelines crowdsourced from Reddit — 2000+ records from r/f1visa and r/USCIS.',
+    images: [ogImage],
   },
 }
 
