@@ -32,6 +32,8 @@ export interface FilterState {
   cardReceived: 'all' | 'yes' | 'no'
   rfie: 'all' | 'yes' | 'no'
   citizenship: string[]
+  appliedDateFrom: string | null
+  appliedDateTo: string | null
 }
 
 export interface DashboardStats {

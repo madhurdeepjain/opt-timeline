@@ -13,6 +13,11 @@ export function applyFilters(records: TimelineRecord[], filters: FilterState): T
     if (filters.rfie === 'yes' && !r.rfie_date) return false
     if (filters.rfie === 'no' && !!r.rfie_date) return false
     if (filters.citizenship.length > 0 && !filters.citizenship.includes(r.country_of_citizenship ?? '')) return false
+    if (filters.appliedDateFrom || filters.appliedDateTo) {
+      if (!r.date_applied) return false
+      if (filters.appliedDateFrom && r.date_applied < filters.appliedDateFrom) return false
+      if (filters.appliedDateTo && r.date_applied > filters.appliedDateTo) return false
+    }
     return true
   })
 }

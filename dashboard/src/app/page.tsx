@@ -63,7 +63,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(null)
-  const [filters, setFilters] = useState<FilterState>({ type: 'all', premium: 'all', approved: 'all', cardReceived: 'all', rfie: 'all', citizenship: [] })
+  const [filters, setFilters] = useState<FilterState>({ type: 'all', premium: 'all', approved: 'all', cardReceived: 'all', rfie: 'all', citizenship: [], appliedDateFrom: null, appliedDateTo: null })
 
   useEffect(() => {
     const base = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
@@ -100,6 +100,23 @@ export default function Home() {
   const citizenshipOptions = useMemo(() =>
     [...new Set(records.map((r) => r.country_of_citizenship).filter((c): c is string => !!c))].sort()
   , [records])
+
+  const appliedDateBounds = useMemo(() => {
+    const dates = records.map((r) => r.date_applied).filter((d): d is string => !!d).sort()
+    return { min: dates[0] ?? null, max: dates[dates.length - 1] ?? null }
+  }, [records])
+
+  const appliedDateDistribution = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const r of records) {
+      if (!r.date_applied) continue
+      const ym = r.date_applied.slice(0, 7)
+      counts[ym] = (counts[ym] ?? 0) + 1
+    }
+    return Object.entries(counts)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, count]) => ({ month, count }))
+  }, [records])
 
   const filtered = useMemo(() => applyFilters(records, filters), [records, filters])
   const stats = useMemo(() => computeStats(filtered), [filtered])
@@ -168,7 +185,7 @@ export default function Home() {
           <>
             {/* Filters */}
             <section>
-              <Filters filters={filters} onChange={setFilters} total={filtered.length} citizenshipOptions={citizenshipOptions} />
+              <Filters filters={filters} onChange={setFilters} total={filtered.length} citizenshipOptions={citizenshipOptions} appliedDateBounds={appliedDateBounds} appliedDateDistribution={appliedDateDistribution} />
             </section>
 
             {/* Stats */}

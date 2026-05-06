@@ -37,14 +37,12 @@ function Card({
 }
 
 export default function StatsCards({ stats }: { stats: DashboardStats }) {
-  const premiumLabel =
-    stats.medianDaysPremium !== null && stats.medianDaysStandard !== null
-      ? `${stats.medianDaysPremium}d premium · ${stats.medianDaysStandard}d standard`
-      : stats.medianDaysPremium !== null
-      ? `${stats.medianDaysPremium}d premium`
-      : stats.medianDaysStandard !== null
-      ? `${stats.medianDaysStandard}d standard`
-      : undefined
+  const medianParts: string[] = []
+  if (stats.medianDaysPremium !== null) medianParts.push(`${stats.medianDaysPremium}d premium`)
+  if (stats.medianDaysStandard !== null) medianParts.push(`${stats.medianDaysStandard}d standard`)
+  const medianSub = medianParts.length > 0
+    ? medianParts.join(' · ')
+    : 'days from applied to approved'
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -58,13 +56,13 @@ export default function StatsCards({ stats }: { stats: DashboardStats }) {
         icon={<Clock size={14} />}
         label="Median Approval"
         value={stats.medianDaysToApproval !== null ? `${stats.medianDaysToApproval}d` : '—'}
-        sub="days from applied to approved"
+        sub={medianSub}
       />
       <Card
         icon={<Zap size={14} />}
         label="Premium Processing"
         value={`${stats.premiumPct}%`}
-        sub={premiumLabel}
+        sub="of records with known processing type"
       />
       <Card
         icon={<CalendarDays size={14} />}
