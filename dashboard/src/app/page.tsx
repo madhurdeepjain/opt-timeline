@@ -63,7 +63,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(null)
-  const [filters, setFilters] = useState<FilterState>({ type: 'all', premium: 'all' })
+  const [filters, setFilters] = useState<FilterState>({ type: 'all', premium: 'all', approved: 'all', cardReceived: 'all', rfie: 'all', citizenship: [] })
 
   useEffect(() => {
     const base = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
@@ -96,6 +96,10 @@ export default function Home() {
         setLoading(false)
       })
   }, [])
+
+  const citizenshipOptions = useMemo(() =>
+    [...new Set(records.map((r) => r.country_of_citizenship).filter((c): c is string => !!c))].sort()
+  , [records])
 
   const filtered = useMemo(() => applyFilters(records, filters), [records, filters])
   const stats = useMemo(() => computeStats(filtered), [filtered])
@@ -164,7 +168,7 @@ export default function Home() {
           <>
             {/* Filters */}
             <section>
-              <Filters filters={filters} onChange={setFilters} total={filtered.length} />
+              <Filters filters={filters} onChange={setFilters} total={filtered.length} citizenshipOptions={citizenshipOptions} />
             </section>
 
             {/* Stats */}

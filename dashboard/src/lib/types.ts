@@ -28,6 +28,10 @@ export interface TimelineRecord {
 export interface FilterState {
   type: 'all' | 'OPT' | 'STEM'
   premium: 'all' | 'standard' | 'premium'
+  approved: 'all' | 'yes' | 'no'
+  cardReceived: 'all' | 'yes' | 'no'
+  rfie: 'all' | 'yes' | 'no'
+  citizenship: string[]
 }
 
 export interface DashboardStats {

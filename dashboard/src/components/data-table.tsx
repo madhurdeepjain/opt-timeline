@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import type { TimelineRecord } from '@/lib/types'
 import { formatDate, cn } from '@/lib/utils'
-import { Download, Search, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react'
+import { Download, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react'
 import Papa from 'papaparse'
 
 type SortKey = 'date_applied' | 'days_to_approval' | 'days_to_card' | 'normalized_type'
@@ -45,24 +45,12 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
 }
 
 export default function DataTable({ records }: { records: TimelineRecord[] }) {
-  const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('date_applied')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [page, setPage] = useState(0)
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase().trim()
-    if (!q) return records
-    return records.filter(
-      (r) =>
-        r.normalized_type.toLowerCase().includes(q) ||
-        (r.country_of_citizenship ?? '').toLowerCase().includes(q) ||
-        (r.biometrics_location ?? '').toLowerCase().includes(q)
-    )
-  }, [records, search])
-
   const sorted = useMemo(() => {
-    return [...filtered].sort((a, b) => {
+    return [...records].sort((a, b) => {
       let av: string | number | null = a[sortKey]
       let bv: string | number | null = b[sortKey]
       if (av === null || av === undefined) av = sortDir === 'asc' ? Infinity : -Infinity
@@ -72,7 +60,7 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
       }
       return sortDir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number)
     })
-  }, [filtered, sortKey, sortDir])
+  }, [records, sortKey, sortDir])
 
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE)
   const pageData = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -118,20 +106,6 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
         <h3 className="text-base font-bold flex-1" style={{ color: 'var(--ink)' }}>
           All Records
         </h3>
-        <div
-          className="flex items-center gap-2 px-3 py-1.5 rounded-md border"
-          style={{ borderColor: 'var(--hairline)', backgroundColor: 'var(--canvas)' }}
-        >
-          <Search size={13} style={{ color: 'var(--mute)' }} />
-          <input
-            type="text"
-            placeholder="Search type, country…"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(0) }}
-            className="text-sm bg-transparent outline-none w-40"
-            style={{ color: 'var(--ink)' }}
-          />
-        </div>
         <button
           onClick={() => exportCSV(sorted)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-bold transition-colors cursor-pointer"
@@ -168,6 +142,12 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
                 style={{ color: 'var(--mute)' }}
               >
                 Card Received
+              </th>
+              <th
+                className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
+                style={{ color: 'var(--mute)' }}
+              >
+                Citizenship
               </th>
               <th
                 className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
@@ -223,6 +203,9 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
                 <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
                   {formatDate(r.date_card_received)}
                 </td>
+                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                  {r.country_of_citizenship ?? '—'}
+                </td>
                 <td className="px-4 py-3">
                   {r.permalink && (
                     <a
@@ -241,11 +224,11 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
             {pageData.length === 0 && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="px-4 py-12 text-center text-sm"
                   style={{ color: 'var(--mute)' }}
                 >
-                  No records match your search.
+                  No records match the selected filters.
                 </td>
               </tr>
             )}

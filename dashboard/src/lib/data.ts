@@ -6,6 +6,13 @@ export function applyFilters(records: TimelineRecord[], filters: FilterState): T
     if (filters.type !== 'all' && r.normalized_type !== filters.type) return false
     if (filters.premium === 'premium' && r.premium_processing !== true) return false
     if (filters.premium === 'standard' && r.premium_processing !== false) return false
+    if (filters.approved === 'yes' && !r.date_approved) return false
+    if (filters.approved === 'no' && !!r.date_approved) return false
+    if (filters.cardReceived === 'yes' && !r.date_card_received) return false
+    if (filters.cardReceived === 'no' && !!r.date_card_received) return false
+    if (filters.rfie === 'yes' && !r.rfie_date) return false
+    if (filters.rfie === 'no' && !!r.rfie_date) return false
+    if (filters.citizenship.length > 0 && !filters.citizenship.includes(r.country_of_citizenship ?? '')) return false
     return true
   })
 }
