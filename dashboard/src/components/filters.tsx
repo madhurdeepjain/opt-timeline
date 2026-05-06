@@ -239,6 +239,19 @@ function fmtMonth(ym: string): string {
   return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
 }
 
+const _MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function fmtPillDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return `${d} ${_MON[m - 1]} '${String(y).slice(2)}`
+}
+
+function lastDayOfMonth(ym: string): string {
+  const [y, m] = ym.split('-').map(Number)
+  const day = new Date(y, m, 0).getDate()
+  return `${ym}-${String(day).padStart(2, '0')}`
+}
+
 function AppliedDateFilter({
   from,
   to,
@@ -307,7 +320,7 @@ function AppliedDateFilter({
     if (l === 0 && r === n - 1) {
       onChange(null, null)
     } else {
-      onChange(`${months[l]}-01`, `${months[r]}-31`)
+      onChange(`${months[l]}-01`, lastDayOfMonth(months[r]))
     }
   }
 
@@ -336,23 +349,45 @@ function AppliedDateFilter({
 
   const tickIndices = useMemo(() => {
     if (n <= 1) return [0]
-    // pick an interval that targets ~4-5 ticks, aligned to nice months
     const interval = n <= 8 ? 1 : n <= 18 ? 3 : n <= 36 ? 6 : 12
-    const ticks: number[] = []
+    const candidates: number[] = []
     for (let i = 0; i < n; i++) {
       const mo = parseInt(months[i].slice(5, 7), 10)
-      if (interval === 1 || mo % interval === 1) ticks.push(i)
+      if (interval === 1 || mo % interval === 1) candidates.push(i)
     }
-    if (ticks.length === 0 || ticks[ticks.length - 1] !== n - 1) ticks.push(n - 1)
-    return ticks
+    if (candidates.length === 0 || candidates[candidates.length - 1] !== n - 1) candidates.push(n - 1)
+
+    // Different minimum gaps based on label transforms (label ≈ 44px in 268px container):
+    //   first → second  (0% + right-edge vs -50% centered): 26%
+    //   middle → middle (-50% each):                         18%
+    //   any    → last   (-50% vs -100% right-anchored):     30%, pop multiple if needed
+    const result: number[] = []
+    for (const idx of candidates) {
+      const isLast = idx === n - 1
+      const pct = (idx / (n - 1)) * 100
+
+      if (result.length === 0) { result.push(idx); continue }
+
+      if (isLast) {
+        while (result.length > 1 && pct - (result[result.length - 1] / (n - 1)) * 100 < 30) {
+          result.pop()
+        }
+        result.push(idx)
+      } else {
+        const prevPct = (result[result.length - 1] / (n - 1)) * 100
+        const minGap = result.length === 1 ? 26 : 18
+        if (pct - prevPct >= minGap) result.push(idx)
+      }
+    }
+    return result
   }, [n, months])
 
   const label = hasFilter
     ? from && to
-      ? `${fmtMonth(from.slice(0, 7))} – ${fmtMonth(to.slice(0, 7))}`
+      ? `${fmtPillDate(from)} – ${fmtPillDate(to)}`
       : from
-      ? `From ${fmtMonth(from.slice(0, 7))}`
-      : `Until ${fmtMonth(to!.slice(0, 7))}`
+      ? `From ${fmtPillDate(from)}`
+      : `Until ${fmtPillDate(to!)}`
     : 'Applied date'
 
   return (
@@ -485,10 +520,33 @@ function AppliedDateFilter({
             />
           </div>
 
-          {/* Range labels */}
-          <div className="flex justify-between mt-2 text-xs" style={{ color: 'var(--mute)' }}>
-            <span>{fmtMonth(months[leftIdx])}</span>
-            {leftIdx !== rightIdx && <span>{fmtMonth(months[rightIdx])}</span>}
+          {/* Date inputs */}
+          <div className="flex items-center gap-2 mt-3">
+            <div className="flex-1">
+              <div className="text-[10px] mb-1" style={{ color: 'var(--mute)' }}>From</div>
+              <input
+                type="date"
+                value={from ?? ''}
+                min={min ?? undefined}
+                max={to ?? max ?? undefined}
+                onChange={(e) => onChange(e.target.value || null, to)}
+                className="w-full text-xs px-2 py-1 rounded border outline-none"
+                style={{ backgroundColor: 'var(--surface-soft)', borderColor: 'var(--hairline)', color: 'var(--ink)' }}
+              />
+            </div>
+            <div className="text-xs pt-5" style={{ color: 'var(--mute)' }}>–</div>
+            <div className="flex-1">
+              <div className="text-[10px] mb-1" style={{ color: 'var(--mute)' }}>To</div>
+              <input
+                type="date"
+                value={to ?? ''}
+                min={from ?? min ?? undefined}
+                max={max ?? undefined}
+                onChange={(e) => onChange(from, e.target.value || null)}
+                className="w-full text-xs px-2 py-1 rounded border outline-none"
+                style={{ backgroundColor: 'var(--surface-soft)', borderColor: 'var(--hairline)', color: 'var(--ink)' }}
+              />
+            </div>
           </div>
         </div>
       )}
