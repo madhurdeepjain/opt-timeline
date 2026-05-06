@@ -66,12 +66,21 @@ export default function Home() {
   const [filters, setFilters] = useState<FilterState>({ type: 'all', premium: 'all' })
 
   useEffect(() => {
-    const csvPath = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/data`
-    fetch(csvPath, { cache: 'no-store' })
+    const base = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
+
+    fetch(`${base}/api/meta`)
+      .then((r) => r.json())
+      .then(({ scraped_at }: { scraped_at: string | null }) => {
+        if (scraped_at) {
+          const d = new Date(scraped_at)
+          setFetchedAt(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }))
+        }
+      })
+      .catch(() => {})
+
+    fetch(`${base}/api/data`, { cache: 'no-store' })
       .then((r) => {
         if (!r.ok) throw new Error(`Failed to load data (${r.status})`)
-        const updated = r.headers.get('x-data-updated')
-        setFetchedAt(formatDate(updated))
         return r.text()
       })
       .then((text) => {

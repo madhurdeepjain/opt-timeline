@@ -1,3 +1,5 @@
+from pathlib import Path
+
 THREADS = [
     {
         "url": "https://www.reddit.com/r/f1visa/comments/1r6p9k0/optstem_opt_processing_timelines_megathread.json",
@@ -13,7 +15,7 @@ THREADS = [
     },
 ]
 
-DEFAULT_OUTPUT = "out/timeline.csv"
+DEFAULT_OUTPUT = str(Path(__file__).resolve().parents[3] / "dashboard" / "data" / "timeline.csv")
 
 CSV_FIELDS = [
     "comment_id",

@@ -1,5 +1,6 @@
 """CLI entry-point: `uv run scrape`"""
 
+import json
 import traceback
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -111,3 +112,9 @@ def cli(output: str, no_merge: bool, verbose: bool) -> None:
 
     save(merged, out_path)
     console.print(f"\n[bold green]✓ Saved {len(merged)} records → {out_path}[/bold green]")
+
+    meta_path = out_path.with_name("meta.json")
+    meta_path.write_text(
+        json.dumps({"scraped_at": datetime.now(tz=timezone.utc).isoformat()}) + "\n"
+    )
+    console.print(f"[dim]Meta → {meta_path}[/dim]")
