@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
+import Papa from 'papaparse'
 import type { TimelineRecord, FilterState } from '@/lib/types'
 import { applyFilters, computeStats, buildHistogramData, buildMonthlyTrendData } from '@/lib/data'
 import { formatDate } from '@/lib/utils'
@@ -13,6 +14,50 @@ import { ProcessingTimeChart, MonthlyTrendChart } from '@/components/charts'
 import DataTable from '@/components/data-table'
 import Footer from '@/components/footer'
 
+function parseBool(v: string): boolean | null {
+  if (v === 'true') return true
+  if (v === 'false') return false
+  return null
+}
+
+function parseNum(v: string): number | null {
+  const n = parseInt(v, 10)
+  return isNaN(n) ? null : n
+}
+
+function parseStr(v: string): string | null {
+  return v && v.trim() !== '' ? v.trim() : null
+}
+
+function mapRow(row: Record<string, string>): TimelineRecord {
+  return {
+    comment_id: row.comment_id ?? '',
+    author: row.author ?? '',
+    created_utc: row.created_utc ?? '',
+    subreddit: row.subreddit ?? '',
+    permalink: row.permalink ?? '',
+    type: row.type ?? '',
+    normalized_type: row.normalized_type ?? '',
+    premium_processing: parseBool(row.premium_processing),
+    date_applied: parseStr(row.date_applied),
+    rfie_date: parseStr(row.rfie_date),
+    biometrics_requested_date: parseStr(row.biometrics_requested_date),
+    biometrics_completed_date: parseStr(row.biometrics_completed_date),
+    biometrics_location: parseStr(row.biometrics_location),
+    noid: parseBool(row.noid),
+    noid_date: parseStr(row.noid_date),
+    date_approved: parseStr(row.date_approved),
+    date_card_produced: parseStr(row.date_card_produced),
+    date_card_shipped: parseStr(row.date_card_shipped),
+    date_card_received: parseStr(row.date_card_received),
+    country_of_citizenship: parseStr(row.country_of_citizenship),
+    days_to_approval: parseNum(row.days_to_approval),
+    days_to_card: parseNum(row.days_to_card),
+    raw_text: row.raw_text ?? '',
+    parse_errors: [],
+  }
+}
+
 export default function Home() {
   const [records, setRecords] = useState<TimelineRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -21,13 +66,18 @@ export default function Home() {
   const [filters, setFilters] = useState<FilterState>({ type: 'all', premium: 'all' })
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/data`)
+    const csvPath = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/data`
+    fetch(csvPath, { cache: 'no-store' })
       .then((r) => {
-        if (!r.ok) throw new Error('Failed to load data')
-        return r.json()
+        if (!r.ok) throw new Error(`Failed to load data (${r.status})`)
+        return r.text()
       })
-      .then((data: TimelineRecord[]) => {
-        setRecords(data)
+      .then((text) => {
+        const result = Papa.parse<Record<string, string>>(text, {
+          header: true,
+          skipEmptyLines: true,
+        })
+        setRecords(result.data.map(mapRow))
         setFetchedAt(formatDate(new Date().toISOString().slice(0, 10)))
         setLoading(false)
       })
