@@ -9,32 +9,28 @@ const ibmPlexSans = IBM_Plex_Sans({
   display: 'swap',
 })
 
-const siteUrl = 'https://madhurdeepjain.github.io/opt-timeline'
+const siteUrl = 'https://www.mdjain.com/opt-timeline'
 
 export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
+  // metadataBase must be the domain root — absolute paths like /opengraph-image
+  // replace the path segment of the base URL, so /opt-timeline in the base would be dropped.
+  metadataBase: new URL('https://www.mdjain.com'),
   title: {
     default: 'OPT Timeline',
     template: '%s · OPT Timeline',
   },
-  description:
-    'Community-sourced OPT & STEM OPT EAD processing timelines aggregated from Reddit megathreads. Track approval times, biometrics, and card delivery.',
+  description: 'Real OPT & STEM OPT approval timelines crowdsourced from Reddit — 2000+ records from r/f1visa and r/USCIS megathreads.',
   openGraph: {
     type: 'website',
     url: siteUrl,
     siteName: 'OPT Timeline',
     title: 'OPT Timeline',
-    description:
-      'Community-sourced OPT & STEM OPT EAD processing timelines aggregated from Reddit megathreads.',
+    description: 'Real OPT & STEM OPT approval timelines crowdsourced from Reddit — 2000+ records from r/f1visa and r/USCIS.',
   },
   twitter: {
     card: 'summary_large_image',
     title: 'OPT Timeline',
-    description:
-      'Community-sourced OPT & STEM OPT EAD processing timelines aggregated from Reddit megathreads.',
-  },
-  icons: {
-    icon: '/opt-timeline/icon.svg',
+    description: 'Real OPT & STEM OPT approval timelines crowdsourced from Reddit — 2000+ records from r/f1visa and r/USCIS.',
   },
 }
 
