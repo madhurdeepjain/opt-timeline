@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, useMemo } from 'react'
 import type { FilterState } from '@/lib/types'
+import { THREAD_OPTIONS } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { ChevronDown, X } from 'lucide-react'
 
@@ -119,6 +120,100 @@ function CitizenshipDropdown({
                 className="accent-[var(--ink)] cursor-pointer"
               />
               {country}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ThreadFilter({
+  selected,
+  onChange,
+}: {
+  selected: string[]
+  onChange: (v: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  function toggle(id: string) {
+    if (selected.includes(id)) onChange(selected.filter((s) => s !== id))
+    else onChange([...selected, id])
+  }
+
+  const label =
+    selected.length === 0
+      ? 'All threads'
+      : selected.length === 1
+      ? `${THREAD_OPTIONS.find((t) => t.id === selected[0])?.subreddit} · ${THREAD_OPTIONS.find((t) => t.id === selected[0])?.label}`
+      : `${selected.length} threads`
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors"
+        style={{
+          backgroundColor: selected.length > 0 ? 'var(--ink)' : 'var(--surface-soft)',
+          color: selected.length > 0 ? '#fff' : 'var(--body)',
+        }}
+      >
+        {label}
+        {selected.length > 0 ? (
+          <span
+            role="button"
+            onClick={(e) => { e.stopPropagation(); onChange([]) }}
+            className="flex items-center opacity-70 hover:opacity-100"
+          >
+            <X size={11} />
+          </span>
+        ) : (
+          <ChevronDown size={12} style={{ opacity: 0.5 }} />
+        )}
+      </button>
+
+      {open && (
+        <div
+          className="absolute top-full left-0 mt-1 z-50 rounded-md border shadow-md min-w-56"
+          style={{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--hairline)' }}
+        >
+          {THREAD_OPTIONS.map((thread) => (
+            <label
+              key={thread.id}
+              className="flex items-start gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-[var(--surface-soft)]"
+            >
+              <input
+                type="checkbox"
+                checked={selected.includes(thread.id)}
+                onChange={() => toggle(thread.id)}
+                className="accent-[var(--ink)] cursor-pointer mt-0.5 shrink-0"
+              />
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm leading-tight" style={{ color: 'var(--ink)' }}>
+                  r/{thread.subreddit} · {thread.label}
+                </span>
+                <a
+                  href={thread.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-[11px] hover:underline truncate"
+                  style={{ color: 'var(--mute)' }}
+                >
+                  reddit.com/r/{thread.subreddit}/comments/{thread.id}/
+                </a>
+              </div>
             </label>
           ))}
         </div>
@@ -486,6 +581,11 @@ export default function Filters({ filters, onChange, total, citizenshipOptions, 
         max={appliedDateBounds.max}
         distribution={appliedDateDistribution}
         onChange={(from, to) => onChange({ ...filters, appliedDateFrom: from, appliedDateTo: to })}
+      />
+
+      <ThreadFilter
+        selected={filters.threads}
+        onChange={(threads) => onChange({ ...filters, threads })}
       />
 
       <CitizenshipDropdown

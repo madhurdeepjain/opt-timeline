@@ -1,6 +1,10 @@
 import type { TimelineRecord, FilterState, DashboardStats } from './types'
 import { median, toYearMonth } from './utils'
 
+function postIdFromPermalink(permalink: string): string {
+  return permalink.split('/comments/')[1]?.split('/')[0] ?? ''
+}
+
 export function applyFilters(records: TimelineRecord[], filters: FilterState): TimelineRecord[] {
   return records.filter((r) => {
     if (filters.type !== 'all' && r.normalized_type !== filters.type) return false
@@ -13,6 +17,7 @@ export function applyFilters(records: TimelineRecord[], filters: FilterState): T
     if (filters.rfie === 'yes' && !r.rfie_date) return false
     if (filters.rfie === 'no' && !!r.rfie_date) return false
     if (filters.citizenship.length > 0 && !filters.citizenship.includes(r.country_of_citizenship ?? '')) return false
+    if (filters.threads.length > 0 && !filters.threads.includes(postIdFromPermalink(r.permalink))) return false
     if (filters.appliedDateFrom || filters.appliedDateTo) {
       if (!r.date_applied) return false
       if (filters.appliedDateFrom && r.date_applied < filters.appliedDateFrom) return false

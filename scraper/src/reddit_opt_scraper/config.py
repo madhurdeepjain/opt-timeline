@@ -1,17 +1,32 @@
 from pathlib import Path
 
 THREADS = [
+    # ── 2026 ────────────────────────────────────────────────────────────────────
     {
         "url": "https://www.reddit.com/r/f1visa/comments/1r6p9k0/optstem_opt_processing_timelines_megathread.json",
         "post_id": "1r6p9k0",
         "subreddit": "f1visa",
-        "template": 1,
     },
     {
         "url": "https://www.reddit.com/r/USCIS/comments/1qz1n7j/2026_opt_and_stem_opt_processing_timeline.json",
         "post_id": "1qz1n7j",
         "subreddit": "USCIS",
-        "template": 2,
+    },
+    # ── 2025 ────────────────────────────────────────────────────────────────────
+    {
+        "url": "https://www.reddit.com/r/USCIS/comments/1i6230k/2025_opt_processing_timeline.json",
+        "post_id": "1i6230k",
+        "subreddit": "USCIS",
+    },
+    {
+        "url": "https://www.reddit.com/r/USCIS/comments/1m84yfm/2025_opt_timeline_continued.json",
+        "post_id": "1m84yfm",
+        "subreddit": "USCIS",
+    },
+    {
+        "url": "https://www.reddit.com/r/f1visa/comments/1of7n45/opt_processing_timelines_fall_2025.json",
+        "post_id": "1of7n45",
+        "subreddit": "f1visa",
     },
 ]
 

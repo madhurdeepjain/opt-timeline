@@ -28,6 +28,11 @@ _DATE_FORMATS = [
 
 _SLASH_DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
 
+# Ordinal date: "13th Oct 2025", "2nd Nov 2025", "1st Jan 2026"
+_ORDINAL_DATE = re.compile(
+    r"\b(\d{1,2})(?:st|nd|rd|th)\s+([A-Za-z]{3,9})\s+(\d{4})\b", re.I
+)
+
 
 def parse_date(value: str) -> Optional[str]:
     """Return ISO YYYY-MM-DD or None. Accepts values like 'YES | 02/14/2026'."""
@@ -58,6 +63,19 @@ def parse_date(value: str) -> Optional[str]:
                     return d.strftime("%Y-%m-%d")
             except ValueError:
                 continue
+
+    # Ordinal format: "13th Oct 2025", "2nd Nov 2025", "21st March 2025"
+    m = _ORDINAL_DATE.search(v)
+    if m:
+        candidate = f"{m.group(1)} {m.group(2)} {m.group(3)}"
+        for fmt in ("%d %b %Y", "%d %B %Y"):
+            try:
+                d = datetime.strptime(candidate, fmt)
+                if 2020 <= d.year <= 2035:
+                    return d.strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+
     return None
 
 

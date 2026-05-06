@@ -25,6 +25,21 @@ export interface TimelineRecord {
   parse_errors: string[]
 }
 
+export interface ThreadOption {
+  id: string
+  label: string
+  subreddit: string
+  url: string
+}
+
+export const THREAD_OPTIONS: ThreadOption[] = [
+  { id: '1r6p9k0', label: 'Spring/Summer 2026',  subreddit: 'f1visa', url: 'https://reddit.com/r/f1visa/comments/1r6p9k0/' },
+  { id: '1qz1n7j', label: '2026',                subreddit: 'USCIS',  url: 'https://reddit.com/r/USCIS/comments/1qz1n7j/' },
+  { id: '1i6230k', label: '2025',                subreddit: 'USCIS',  url: 'https://reddit.com/r/USCIS/comments/1i6230k/' },
+  { id: '1m84yfm', label: '2025 (continued)',    subreddit: 'USCIS',  url: 'https://reddit.com/r/USCIS/comments/1m84yfm/' },
+  { id: '1of7n45', label: 'Fall 2025',           subreddit: 'f1visa', url: 'https://reddit.com/r/f1visa/comments/1of7n45/' },
+]
+
 export interface FilterState {
   type: 'all' | 'OPT' | 'STEM'
   premium: 'all' | 'standard' | 'premium'
@@ -32,6 +47,7 @@ export interface FilterState {
   cardReceived: 'all' | 'yes' | 'no'
   rfie: 'all' | 'yes' | 'no'
   citizenship: string[]
+  threads: string[]
   appliedDateFrom: string | null
   appliedDateTo: string | null
 }

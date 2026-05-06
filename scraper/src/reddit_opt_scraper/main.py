@@ -1,6 +1,7 @@
 """CLI entry-point: `uv run scrape`"""
 
 import json
+import time
 import traceback
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -72,11 +73,16 @@ def cli(output: str, no_merge: bool, verbose: bool) -> None:
         console.print(f"Loaded [bold]{len(existing)}[/bold] existing records")
 
     all_fresh: list[dict] = []
+    failed_threads: list[str] = []
 
     with httpx.Client() as client:
-        for thread in THREADS:
+        for i, thread in enumerate(THREADS):
             sub = thread["subreddit"]
-            console.print(f"\n[bold]Fetching r/{sub}…[/bold]")
+            post_id = thread["post_id"]
+            if i > 0:
+                console.print(f"[dim]Waiting 30 s before next thread…[/dim]")
+                time.sleep(30)
+            console.print(f"\n[bold]Fetching r/{sub} ({post_id})…[/bold]")
             seen = parsed = 0
 
             with Progress(SpinnerColumn(), TextColumn("{task.description}"), console=console) as prog:
@@ -96,9 +102,16 @@ def cli(output: str, no_merge: bool, verbose: bool) -> None:
                                 )
                     prog.update(task, description=f"Done — {seen} comments, {parsed} matched template")
                 except Exception:
-                    console.print(f"[bold red]✗ Error fetching r/{sub} — aborting without writing.[/bold red]")
+                    console.print(f"[bold yellow]⚠ Error fetching r/{sub} ({post_id}) — skipping.[/bold yellow]")
                     traceback.print_exc()
-                    raise SystemExit(1)
+                    failed_threads.append(post_id)
+
+    if failed_threads:
+        console.print(f"\n[bold yellow]⚠ Skipped threads: {', '.join(failed_threads)}[/bold yellow]")
+
+    if not all_fresh and not existing:
+        console.print("[bold red]No data collected — nothing to save.[/bold red]")
+        raise SystemExit(1)
 
     # Summary table
     tbl = Table(show_header=True, header_style="bold magenta")
