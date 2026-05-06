@@ -70,6 +70,8 @@ export default function Home() {
     fetch(csvPath, { cache: 'no-store' })
       .then((r) => {
         if (!r.ok) throw new Error(`Failed to load data (${r.status})`)
+        const updated = r.headers.get('x-data-updated')
+        setFetchedAt(formatDate(updated))
         return r.text()
       })
       .then((text) => {
@@ -78,7 +80,6 @@ export default function Home() {
           skipEmptyLines: true,
         })
         setRecords(result.data.map(mapRow))
-        setFetchedAt(formatDate(new Date().toISOString().slice(0, 10)))
         setLoading(false)
       })
       .catch((e) => {
