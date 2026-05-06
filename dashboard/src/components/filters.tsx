@@ -137,6 +137,7 @@ function ThreadFilter({
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const [showGlow, setShowGlow] = useState(() => selected.length > 0)
 
   useEffect(() => {
     if (!open) return
@@ -161,27 +162,46 @@ function ThreadFilter({
 
   return (
     <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors"
-        style={{
-          backgroundColor: selected.length > 0 ? 'var(--ink)' : 'var(--surface-soft)',
-          color: selected.length > 0 ? '#fff' : 'var(--body)',
-        }}
-      >
-        {label}
-        {selected.length > 0 ? (
-          <span
-            role="button"
-            onClick={(e) => { e.stopPropagation(); onChange([]) }}
-            className="flex items-center opacity-70 hover:opacity-100"
-          >
-            <X size={11} />
-          </span>
-        ) : (
-          <ChevronDown size={12} style={{ opacity: 0.5 }} />
+      <div style={{ position: 'relative', display: 'inline-flex', borderRadius: '9999px', padding: '2px', overflow: 'hidden' }}>
+        {showGlow && (
+          <div
+            onAnimationEnd={() => setShowGlow(false)}
+            style={{
+              position: 'absolute',
+              width: '200%',
+              height: '200%',
+              top: '-50%',
+              left: '-50%',
+              background: 'conic-gradient(from 0deg, transparent 45%, #f7a501 62%, #f7a501 82%, transparent 100%)',
+              animation: 'border-spin 7s linear forwards',
+              zIndex: 0,
+            }}
+          />
         )}
-      </button>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors"
+          style={{
+            position: 'relative',
+            zIndex: 1,
+            backgroundColor: selected.length > 0 ? 'var(--ink)' : 'var(--surface-soft)',
+            color: selected.length > 0 ? '#fff' : 'var(--body)',
+          }}
+        >
+          {label}
+          {selected.length > 0 ? (
+            <span
+              role="button"
+              onClick={(e) => { e.stopPropagation(); onChange([]) }}
+              className="flex items-center opacity-70 hover:opacity-100"
+            >
+              <X size={11} />
+            </span>
+          ) : (
+            <ChevronDown size={12} style={{ opacity: 0.5 }} />
+          )}
+        </button>
+      </div>
 
       {open && (
         <div

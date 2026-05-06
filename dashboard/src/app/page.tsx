@@ -63,7 +63,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(null)
-  const [filters, setFilters] = useState<FilterState>({ type: 'all', premium: 'all', approved: 'all', cardReceived: 'all', rfie: 'all', citizenship: [], threads: [], appliedDateFrom: null, appliedDateTo: null })
+  const [filters, setFilters] = useState<FilterState>({ type: 'all', premium: 'all', approved: 'all', cardReceived: 'all', rfie: 'all', citizenship: [], threads: ['1r6p9k0', '1qz1n7j'], appliedDateFrom: null, appliedDateTo: null })
 
   useEffect(() => {
     const base = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
