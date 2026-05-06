@@ -73,7 +73,14 @@ export default function Home() {
       .then(({ scraped_at }: { scraped_at: string | null }) => {
         if (scraped_at) {
           const d = new Date(scraped_at)
-          setFetchedAt(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }))
+          const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+          const tzAbbr = d.toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop() ?? tz
+          setFetchedAt(
+            d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+            ' · ' +
+            d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) +
+            ' ' + tzAbbr
+          )
         }
       })
       .catch(() => {})
