@@ -209,7 +209,7 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
                 <td className="px-4 py-3">
                   {r.permalink && (
                     <a
-                      href={`https://reddit.com${r.permalink}`}
+                      href={`${r.permalink}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{ color: 'var(--mute)' }}
