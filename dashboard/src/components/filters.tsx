@@ -165,7 +165,6 @@ function ThreadFilter({
       <div style={{ position: 'relative', display: 'inline-flex', borderRadius: '9999px', padding: '2px', overflow: 'hidden' }}>
         {showGlow && (
           <div
-            onAnimationEnd={() => setShowGlow(false)}
             style={{
               position: 'absolute',
               width: '200%',
@@ -173,13 +172,13 @@ function ThreadFilter({
               top: '-50%',
               left: '-50%',
               background: 'conic-gradient(from 0deg, transparent 45%, #f7a501 62%, #f7a501 82%, transparent 100%)',
-              animation: 'border-spin 7s linear forwards',
+              animation: 'border-spin 3.8s linear infinite',
               zIndex: 0,
             }}
           />
         )}
         <button
-          onClick={() => setOpen((o) => !o)}
+          onClick={() => { setShowGlow(false); setOpen((o) => !o) }}
           className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors"
           style={{
             position: 'relative',
@@ -192,7 +191,7 @@ function ThreadFilter({
           {selected.length > 0 ? (
             <span
               role="button"
-              onClick={(e) => { e.stopPropagation(); onChange([]) }}
+              onClick={(e) => { e.stopPropagation(); setShowGlow(false); onChange([]) }}
               className="flex items-center opacity-70 hover:opacity-100"
             >
               <X size={11} />

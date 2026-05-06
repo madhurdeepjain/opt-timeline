@@ -17,7 +17,7 @@ import { formatYearMonth } from '@/lib/utils'
 const OPT_COLOR = '#23251d'
 const STEM_COLOR = '#f7a501'
 
-function ChartCard({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+export function ChartCard({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
     <div
       className="rounded-md border p-6 flex flex-col gap-4"

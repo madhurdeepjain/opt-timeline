@@ -9,7 +9,6 @@ import Papa from 'papaparse'
 type SortKey = 'date_applied' | 'days_to_approval' | 'days_to_card' | 'normalized_type'
 type SortDir = 'asc' | 'desc'
 
-const PAGE_SIZE = 25
 
 function exportCSV(records: TimelineRecord[]) {
   const exportable = records.map((r) => ({
@@ -48,6 +47,7 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
   const [sortKey, setSortKey] = useState<SortKey>('date_applied')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
 
   const sorted = useMemo(() => {
     return [...records].sort((a, b) => {
@@ -62,8 +62,8 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
     })
   }, [records, sortKey, sortDir])
 
-  const totalPages = Math.ceil(sorted.length / PAGE_SIZE)
-  const pageData = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+  const totalPages = Math.ceil(sorted.length / pageSize)
+  const pageData = sorted.slice(page * pageSize, (page + 1) * pageSize)
 
   function handleSort(key: SortKey) {
     if (key === sortKey) {
@@ -237,14 +237,33 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div
-          className="flex items-center justify-between px-6 py-3 border-t"
-          style={{ borderColor: 'var(--hairline)' }}
-        >
+      <div
+        className="flex items-center justify-between px-6 py-3 border-t"
+        style={{ borderColor: 'var(--hairline)' }}
+      >
+        <div className="flex items-center gap-3">
           <span className="text-xs" style={{ color: 'var(--mute)' }}>
-            {sorted.length.toLocaleString()} records · page {page + 1} of {totalPages}
+            {sorted.length.toLocaleString()} records
+            {totalPages > 1 && ` · page ${page + 1} of ${totalPages}`}
           </span>
+          <div className="flex items-center gap-1">
+            {([10, 25, 50] as const).map((n) => (
+              <button
+                key={n}
+                onClick={() => { setPageSize(n); setPage(0) }}
+                className="px-2 py-0.5 rounded text-xs font-medium cursor-pointer transition-colors"
+                style={{
+                  backgroundColor: pageSize === n ? 'var(--ink)' : 'var(--surface-soft)',
+                  color: pageSize === n ? '#fff' : 'var(--mute)',
+                }}
+              >
+                {n}
+              </button>
+            ))}
+            <span className="text-xs" style={{ color: 'var(--mute)' }}>per page</span>
+          </div>
+        </div>
+        {totalPages > 1 && (
           <div className="flex gap-2">
             <button
               onClick={() => setPage((p) => Math.max(0, p - 1))}
@@ -263,8 +282,8 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
               Next →
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

@@ -36,3 +36,10 @@ export function formatYearMonth(ym: string): string {
   const d = new Date(parseInt(year), parseInt(month) - 1, 1)
   return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 }
+
+export function daysBetween(a: string, b: string): number {
+  return Math.round(
+    (new Date(b + 'T12:00:00Z').getTime() - new Date(a + 'T12:00:00Z').getTime()) /
+    (1000 * 60 * 60 * 24)
+  )
+}

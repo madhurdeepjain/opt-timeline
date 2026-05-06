@@ -13,6 +13,10 @@ import StatsCards from '@/components/stats-cards'
 import { ProcessingTimeChart, MonthlyTrendChart } from '@/components/charts'
 import DataTable from '@/components/data-table'
 import Footer from '@/components/footer'
+import WhereAreYouCard from '@/components/where-are-you'
+import StageFunnel from '@/components/stage-funnel'
+import MilestoneBreakdown from '@/components/milestone-breakdown'
+import CountryBreakdown from '@/components/country-breakdown'
 
 function parseBool(v: string): boolean | null {
   if (v === 'true') return true
@@ -150,11 +154,6 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Personal Timeline */}
-        <section>
-          <PersonalTimeline />
-        </section>
-
         {/* Loading / Error states */}
         {loading && (
           <div className="space-y-4">
@@ -190,6 +189,11 @@ export default function Home() {
 
         {!loading && !error && (
           <>
+            {/* Where Are You — uses own 2026-thread scope, unaffected by global filters */}
+            <section>
+              <WhereAreYouCard records={records} />
+            </section>
+
             {/* Filters */}
             <section>
               <Filters filters={filters} onChange={setFilters} total={filtered.length} citizenshipOptions={citizenshipOptions} appliedDateBounds={appliedDateBounds} appliedDateDistribution={appliedDateDistribution} />
@@ -206,9 +210,29 @@ export default function Home() {
               <MonthlyTrendChart data={trendData} />
             </section>
 
+            {/* Stage Funnel */}
+            <section>
+              <StageFunnel records={filtered} />
+            </section>
+
+            {/* Milestone Breakdown */}
+            <section>
+              <MilestoneBreakdown records={filtered} />
+            </section>
+
+            {/* Country Breakdown */}
+            <section>
+              <CountryBreakdown records={filtered} />
+            </section>
+
             {/* Data Table */}
             <section>
               <DataTable records={filtered} />
+            </section>
+
+            {/* Personal Timeline */}
+            <section>
+              <PersonalTimeline />
             </section>
           </>
         )}

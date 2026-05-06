@@ -52,6 +52,36 @@ export interface FilterState {
   appliedDateTo: string | null
 }
 
+export interface SurvivalPoint {
+  day: number
+  pctApproved: number
+  pctPending: number
+}
+
+export interface FunnelStage {
+  stage: string
+  count: number
+  pct: number
+}
+
+export interface MilestonePoint {
+  stage: string
+  median: number | null
+  p25: number | null
+  p75: number | null
+  range: [number, number] | null
+  n: number
+  bioOnly: boolean
+}
+
+export interface CountryBreakdown {
+  country: string
+  n: number
+  median: number
+  p25: number
+  p75: number
+}
+
 export interface DashboardStats {
   total: number
   optCount: number
