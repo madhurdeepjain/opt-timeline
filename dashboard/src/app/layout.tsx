@@ -9,9 +9,33 @@ const ibmPlexSans = IBM_Plex_Sans({
   display: 'swap',
 })
 
+const siteUrl = 'https://madhurdeepjain.github.io/opt-timeline'
+
 export const metadata: Metadata = {
-  title: 'OPT Timeline',
-  description: 'Community OPT & STEM OPT processing timelines from Reddit',
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: 'OPT Timeline',
+    template: '%s · OPT Timeline',
+  },
+  description:
+    'Community-sourced OPT & STEM OPT EAD processing timelines aggregated from Reddit megathreads. Track approval times, biometrics, and card delivery.',
+  openGraph: {
+    type: 'website',
+    url: siteUrl,
+    siteName: 'OPT Timeline',
+    title: 'OPT Timeline',
+    description:
+      'Community-sourced OPT & STEM OPT EAD processing timelines aggregated from Reddit megathreads.',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'OPT Timeline',
+    description:
+      'Community-sourced OPT & STEM OPT EAD processing timelines aggregated from Reddit megathreads.',
+  },
+  icons: {
+    icon: '/opt-timeline/icon.svg',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
