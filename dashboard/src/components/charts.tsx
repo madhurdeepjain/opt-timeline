@@ -1,204 +1,142 @@
-"use client";
+'use client'
 
-import { motion } from "framer-motion";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  LineChart, Line, PieChart, Pie, Cell, FunnelChart, Funnel,
-  LabelList, ResponsiveContainer,
-} from "recharts";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  CartesianGrid,
+  Legend,
+} from 'recharts'
+import { formatYearMonth } from '@/lib/utils'
 
-const fadeUp = {
-  hidden: { opacity: 0, y: 24 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.5 } },
-};
+const OPT_COLOR = '#23251d'
+const STEM_COLOR = '#f7a501'
 
-const COLORS = {
-  opt: "#38bdf8",    // sky-400
-  stem: "#a78bfa",   // violet-400
-  premium: "#34d399",// emerald-400
-  standard: "#fb923c",// orange-400
-  total: "#94a3b8",  // slate-400
-};
-
-const PIE_COLORS = [COLORS.opt, COLORS.stem];
-
-// ─── Processing Time Histogram ───────────────────────────────────────────────
-export function ProcessingTimeChart({ data }: { data: { range: string; opt: number; stem: number }[] }) {
+function ChartCard({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
-    <motion.div variants={fadeUp} initial="hidden" animate="show">
-      <Card>
-        <CardHeader>
-          <CardTitle>Processing Time Distribution (days applied → approved)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={data} margin={{ top: 4, right: 8, left: -16, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-              <XAxis dataKey="range" tick={{ fontSize: 11 }} stroke="#52525b" />
-              <YAxis tick={{ fontSize: 11 }} stroke="#52525b" />
-              <Tooltip
-                contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 8 }}
-                labelStyle={{ color: "#e4e4e7" }}
-              />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="opt" name="OPT" stackId="a" fill={COLORS.opt} radius={[0, 0, 0, 0]} />
-              <Bar dataKey="stem" name="STEM OPT" stackId="a" fill={COLORS.stem} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
+    <div
+      className="rounded-md border p-6 flex flex-col gap-4"
+      style={{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--hairline)' }}
+    >
+      <div>
+        <p className="text-xs font-bold uppercase tracking-widest mb-0.5" style={{ color: 'var(--mute)' }}>
+          {sub}
+        </p>
+        <h3 className="text-base font-bold" style={{ color: 'var(--ink)' }}>
+          {title}
+        </h3>
+      </div>
+      {children}
+    </div>
+  )
 }
 
-// ─── Weekly Submission Trend ──────────────────────────────────────────────────
-export function SubmissionTrendChart({ data }: { data: { week: string; opt: number; stem: number; total: number }[] }) {
-  return (
-    <motion.div variants={fadeUp} initial="hidden" animate="show">
-      <Card>
-        <CardHeader>
-          <CardTitle>Weekly New Applications (by date applied)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={data} margin={{ top: 4, right: 8, left: -16, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-              <XAxis
-                dataKey="week"
-                tick={{ fontSize: 10 }}
-                stroke="#52525b"
-                tickFormatter={(v) => v.slice(5)}  // show MM-DD portion
-              />
-              <YAxis tick={{ fontSize: 11 }} stroke="#52525b" />
-              <Tooltip
-                contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 8 }}
-                labelStyle={{ color: "#e4e4e7" }}
-              />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Line type="monotone" dataKey="opt" name="OPT" stroke={COLORS.opt} strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="stem" name="STEM OPT" stroke={COLORS.stem} strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
+interface HistogramDatum {
+  label: string
+  OPT: number
+  STEM: number
 }
 
-// ─── OPT vs STEM Breakdown ────────────────────────────────────────────────────
-export function TypeBreakdownChart({ data }: { data: { name: string; value: number }[] }) {
+export function ProcessingTimeChart({ data }: { data: HistogramDatum[] }) {
   return (
-    <motion.div variants={fadeUp} initial="hidden" animate="show">
-      <Card>
-        <CardHeader>
-          <CardTitle>Application Type Breakdown</CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-center justify-center">
-          <ResponsiveContainer width="100%" height={240}>
-            <PieChart>
-              <Pie
-                data={data}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={95}
-                paddingAngle={3}
-                dataKey="value"
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                labelLine={false}
-              >
-                {data.map((_, i) => (
-                  <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip
-                contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 8 }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
+    <ChartCard title="Processing Time Distribution" sub="Days to Approval">
+      <ResponsiveContainer width="100%" height={220}>
+        <BarChart data={data} barCategoryGap="20%" barGap={2}>
+          <XAxis
+            dataKey="label"
+            tick={{ fontSize: 11, fill: 'var(--mute)' }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis
+            tick={{ fontSize: 11, fill: 'var(--mute)' }}
+            axisLine={false}
+            tickLine={false}
+            width={28}
+          />
+          <Tooltip
+            contentStyle={{
+              backgroundColor: 'var(--surface-card)',
+              border: '1px solid var(--hairline)',
+              borderRadius: '6px',
+              fontSize: '13px',
+              color: 'var(--ink)',
+            }}
+            cursor={{ fill: 'var(--surface-soft)' }}
+          />
+          <Legend
+            wrapperStyle={{ fontSize: '12px', color: 'var(--mute)', paddingTop: '8px' }}
+          />
+          <Bar dataKey="OPT" fill={OPT_COLOR} radius={[3, 3, 0, 0]} />
+          <Bar dataKey="STEM" fill={STEM_COLOR} radius={[3, 3, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  )
 }
 
-// ─── Premium vs Standard Avg Processing Time ──────────────────────────────────
-export function PremiumComparisonChart({
-  data,
-}: {
-  data: { label: string; avgDays: number; count: number }[];
-}) {
-  return (
-    <motion.div variants={fadeUp} initial="hidden" animate="show">
-      <Card>
-        <CardHeader>
-          <CardTitle>Avg Processing Time — Premium vs Standard</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={data} margin={{ top: 4, right: 8, left: -16, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-              <XAxis dataKey="label" stroke="#52525b" />
-              <YAxis
-                label={{ value: "days", angle: -90, position: "insideLeft", style: { fill: "#71717a" } }}
-                stroke="#52525b"
-              />
-              <Tooltip
-                contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 8 }}
-                formatter={(v: number) => [`${v} days`, "Avg processing"]}
-              />
-              <Bar dataKey="avgDays" name="Avg days to approval" radius={[6, 6, 0, 0]}>
-                {data.map((d, i) => (
-                  <Cell key={i} fill={d.label === "Premium" ? COLORS.premium : COLORS.standard} />
-                ))}
-                <LabelList dataKey="count" position="top" formatter={(v: number) => `n=${v}`} style={{ fill: "#a1a1aa", fontSize: 11 }} />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
+interface TrendDatum {
+  ym: string
+  OPT: number
+  STEM: number
 }
 
-// ─── Application Status Funnel ────────────────────────────────────────────────
-export function StatusFunnelChart({ data }: { data: { stage: string; count: number }[] }) {
-  // Recharts' FunnelChart doesn't look great with dark themes — use a simple horizontal bar instead
-  const max = data[0]?.count || 1;
+export function MonthlyTrendChart({ data }: { data: TrendDatum[] }) {
+  const formatted = data.map((d) => ({ ...d, month: formatYearMonth(d.ym) }))
+
   return (
-    <motion.div variants={fadeUp} initial="hidden" animate="show">
-      <Card>
-        <CardHeader>
-          <CardTitle>Application Progress Funnel</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-2">
-          {data.map(({ stage, count }, i) => {
-            const pct = Math.round((count / max) * 100);
-            const hue = 200 - i * 20; // shift colour as we go deeper
-            return (
-              <div key={stage} className="space-y-1">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">{stage}</span>
-                  <span className="font-medium tabular-nums">
-                    {count.toLocaleString()}
-                    <span className="text-xs text-muted-foreground ml-2">({pct}%)</span>
-                  </span>
-                </div>
-                <div className="h-2 rounded-full bg-muted overflow-hidden">
-                  <motion.div
-                    className="h-full rounded-full"
-                    style={{ backgroundColor: `hsl(${hue}, 80%, 60%)` }}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${pct}%` }}
-                    transition={{ duration: 0.7, delay: i * 0.1 }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
+    <ChartCard title="Monthly Submissions" sub="Application Trend">
+      <ResponsiveContainer width="100%" height={220}>
+        <LineChart data={formatted}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline-soft)" vertical={false} />
+          <XAxis
+            dataKey="month"
+            tick={{ fontSize: 11, fill: 'var(--mute)' }}
+            axisLine={false}
+            tickLine={false}
+            interval="preserveStartEnd"
+          />
+          <YAxis
+            tick={{ fontSize: 11, fill: 'var(--mute)' }}
+            axisLine={false}
+            tickLine={false}
+            width={28}
+          />
+          <Tooltip
+            contentStyle={{
+              backgroundColor: 'var(--surface-card)',
+              border: '1px solid var(--hairline)',
+              borderRadius: '6px',
+              fontSize: '13px',
+              color: 'var(--ink)',
+            }}
+          />
+          <Legend
+            wrapperStyle={{ fontSize: '12px', color: 'var(--mute)', paddingTop: '8px' }}
+          />
+          <Line
+            type="monotone"
+            dataKey="OPT"
+            stroke={OPT_COLOR}
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4 }}
+          />
+          <Line
+            type="monotone"
+            dataKey="STEM"
+            stroke={STEM_COLOR}
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4 }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  )
 }

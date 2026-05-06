@@ -1,66 +1,85 @@
-"use client";
+'use client'
 
-import { FilterState } from "@/lib/types";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { FilterState } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
 interface FiltersProps {
-  filters: FilterState;
-  onChange: (next: FilterState) => void;
+  filters: FilterState
+  onChange: (filters: FilterState) => void
+  total: number
 }
 
-export function Filters({ filters, onChange }: FiltersProps) {
+function PillTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
   return (
-    <div className="flex flex-wrap gap-3">
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">Type</label>
-        <Select
-          value={filters.normalizedType}
-          onValueChange={(v) => onChange({ ...filters, normalizedType: v as FilterState["normalizedType"] })}
-        >
-          <SelectTrigger className="w-36">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
-            <SelectItem value="OPT">OPT</SelectItem>
-            <SelectItem value="STEM">STEM OPT</SelectItem>
-          </SelectContent>
-        </Select>
+    <button
+      onClick={onClick}
+      className={cn(
+        'px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-colors cursor-pointer border',
+        active
+          ? 'border-transparent'
+          : 'border-transparent hover:border-transparent'
+      )}
+      style={
+        active
+          ? { backgroundColor: 'var(--ink)', color: '#fff', borderColor: 'transparent' }
+          : { backgroundColor: 'transparent', color: 'var(--body)', borderColor: 'transparent' }
+      }
+    >
+      {children}
+    </button>
+  )
+}
+
+export default function Filters({ filters, onChange, total }: FiltersProps) {
+  return (
+    <div className="flex flex-wrap items-center gap-4">
+      <div
+        className="flex items-center gap-1 rounded-full p-1"
+        style={{ backgroundColor: 'var(--surface-soft)' }}
+      >
+        <PillTab active={filters.type === 'all'} onClick={() => onChange({ ...filters, type: 'all' })}>
+          All types
+        </PillTab>
+        <PillTab active={filters.type === 'OPT'} onClick={() => onChange({ ...filters, type: 'OPT' })}>
+          OPT
+        </PillTab>
+        <PillTab active={filters.type === 'STEM'} onClick={() => onChange({ ...filters, type: 'STEM' })}>
+          STEM OPT
+        </PillTab>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">Premium Processing</label>
-        <Select
-          value={filters.premiumProcessing}
-          onValueChange={(v) => onChange({ ...filters, premiumProcessing: v as FilterState["premiumProcessing"] })}
+      <div
+        className="flex items-center gap-1 rounded-full p-1"
+        style={{ backgroundColor: 'var(--surface-soft)' }}
+      >
+        <PillTab active={filters.premium === 'all'} onClick={() => onChange({ ...filters, premium: 'all' })}>
+          All processing
+        </PillTab>
+        <PillTab
+          active={filters.premium === 'standard'}
+          onClick={() => onChange({ ...filters, premium: 'standard' })}
         >
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="true">Premium</SelectItem>
-            <SelectItem value="false">Standard</SelectItem>
-          </SelectContent>
-        </Select>
+          Standard
+        </PillTab>
+        <PillTab
+          active={filters.premium === 'premium'}
+          onClick={() => onChange({ ...filters, premium: 'premium' })}
+        >
+          Premium
+        </PillTab>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">Source</label>
-        <Select
-          value={filters.subreddit}
-          onValueChange={(v) => onChange({ ...filters, subreddit: v as FilterState["subreddit"] })}
-        >
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All subreddits</SelectItem>
-            <SelectItem value="f1visa">r/f1visa</SelectItem>
-            <SelectItem value="USCIS">r/USCIS</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <span className="text-sm ml-auto" style={{ color: 'var(--mute)' }}>
+        {total.toLocaleString()} records
+      </span>
     </div>
-  );
+  )
 }

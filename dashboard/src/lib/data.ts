@@ -1,141 +1,97 @@
-"use client";
-
-import Papa from "papaparse";
-import { TimelineRecord, DashboardStats, FilterState } from "./types";
-import { avg } from "./utils";
-
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-const CSV_PATH = `${BASE_PATH}/api/data`;
-
-export async function fetchRecords(): Promise<TimelineRecord[]> {
-  const res = await fetch(CSV_PATH, { cache: "no-store" });
-  if (!res.ok) throw new Error(`Failed to load ${CSV_PATH}: ${res.status}`);
-  const text = await res.text();
-
-  return new Promise((resolve, reject) => {
-    Papa.parse<TimelineRecord>(text, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (r) => resolve(r.data),
-      error: reject,
-    });
-  });
-}
+import type { TimelineRecord, FilterState, DashboardStats } from './types'
+import { median, toYearMonth } from './utils'
 
 export function applyFilters(records: TimelineRecord[], filters: FilterState): TimelineRecord[] {
   return records.filter((r) => {
-    if (filters.normalizedType !== "all" && r.normalized_type !== filters.normalizedType) return false;
-    if (filters.premiumProcessing !== "all" && r.premium_processing !== filters.premiumProcessing) return false;
-    if (filters.subreddit !== "all" && r.subreddit !== filters.subreddit) return false;
-    return true;
-  });
+    if (filters.type !== 'all' && r.normalized_type !== filters.type) return false
+    if (filters.premium === 'premium' && r.premium_processing !== true) return false
+    if (filters.premium === 'standard' && r.premium_processing !== false) return false
+    return true
+  })
 }
 
 export function computeStats(records: TimelineRecord[]): DashboardStats {
-  const approved = records.filter((r) => r.date_approved);
-  const daysToApproval = approved
-    .map((r) => parseInt(r.days_to_approval))
-    .filter((n) => !isNaN(n) && n >= 0);
-  const daysToCard = records
-    .filter((r) => r.date_card_received)
-    .map((r) => parseInt(r.days_to_card))
-    .filter((n) => !isNaN(n) && n >= 0);
+  const optCount = records.filter((r) => r.normalized_type === 'OPT').length
+  const stemCount = records.filter((r) => r.normalized_type === 'STEM').length
+  const approvedCount = records.filter((r) => r.date_approved).length
 
-  const sortedDates = records
-    .map((r) => r.created_utc)
-    .filter(Boolean)
-    .sort();
+  const approvalDays = records
+    .map((r) => r.days_to_approval)
+    .filter((d): d is number => typeof d === 'number' && d > 0 && d < 730)
+
+  const standardDays = records
+    .filter((r) => r.premium_processing === false)
+    .map((r) => r.days_to_approval)
+    .filter((d): d is number => typeof d === 'number' && d > 0 && d < 730)
+
+  const premiumDays = records
+    .filter((r) => r.premium_processing === true)
+    .map((r) => r.days_to_approval)
+    .filter((d): d is number => typeof d === 'number' && d > 0 && d < 730)
+
+  const premiumCount = records.filter((r) => r.premium_processing === true).length
+  const knownPremiumTotal = records.filter((r) => r.premium_processing !== null).length
+
+  const appliedDates = records
+    .map((r) => r.date_applied)
+    .filter((d): d is string => !!d)
+    .sort()
 
   return {
     total: records.length,
-    approved: approved.length,
-    pending: records.filter((r) => !r.date_approved).length,
-    avgDaysToApproval: avg(daysToApproval),
-    avgDaysToCard: avg(daysToCard),
-    optCount: records.filter((r) => r.normalized_type === "OPT").length,
-    stemCount: records.filter((r) => r.normalized_type === "STEM").length,
-    premiumCount: records.filter((r) => r.premium_processing === "true").length,
-    standardCount: records.filter((r) => r.premium_processing === "false").length,
-    lastUpdated: sortedDates.length ? sortedDates[sortedDates.length - 1] : null,
-  };
+    optCount,
+    stemCount,
+    approvedCount,
+    medianDaysToApproval: median(approvalDays),
+    medianDaysStandard: median(standardDays),
+    medianDaysPremium: median(premiumDays),
+    premiumPct: knownPremiumTotal > 0 ? Math.round((premiumCount / knownPremiumTotal) * 100) : 0,
+    latestAppliedDate: appliedDates.length > 0 ? appliedDates[appliedDates.length - 1] : null,
+  }
 }
 
-/** Processing time histogram data (days_to_approval). */
-export function processingHistogramData(records: TimelineRecord[]) {
-  const buckets: Record<string, { opt: number; stem: number }> = {};
-  for (const r of records) {
-    const days = parseInt(r.days_to_approval);
-    if (isNaN(days) || days < 0 || days > 300) continue;
-    const low = Math.floor(days / 10) * 10;
-    const key = `${low}–${low + 9}`;
-    if (!buckets[key]) buckets[key] = { opt: 0, stem: 0 };
-    if (r.normalized_type === "STEM") buckets[key].stem++;
-    else buckets[key].opt++;
-  }
-  return Object.entries(buckets)
-    .sort(([a], [b]) => parseInt(a) - parseInt(b))
-    .map(([range, v]) => ({ range, ...v, total: v.opt + v.stem }));
+export function buildHistogramData(records: TimelineRecord[]) {
+  const bins = [
+    { label: '0–15', min: 0, max: 15 },
+    { label: '15–30', min: 15, max: 30 },
+    { label: '30–45', min: 30, max: 45 },
+    { label: '45–60', min: 45, max: 60 },
+    { label: '60–75', min: 60, max: 75 },
+    { label: '75–90', min: 75, max: 90 },
+    { label: '90+', min: 90, max: Infinity },
+  ]
+
+  return bins.map(({ label, min, max }) => {
+    const opt = records.filter(
+      (r) =>
+        r.normalized_type === 'OPT' &&
+        typeof r.days_to_approval === 'number' &&
+        r.days_to_approval >= min &&
+        r.days_to_approval < max
+    ).length
+    const stem = records.filter(
+      (r) =>
+        r.normalized_type === 'STEM' &&
+        typeof r.days_to_approval === 'number' &&
+        r.days_to_approval >= min &&
+        r.days_to_approval < max
+    ).length
+    return { label, OPT: opt, STEM: stem }
+  })
 }
 
-/** Weekly submission counts for a line chart. */
-export function submissionTrendData(records: TimelineRecord[]) {
-  const map = new Map<string, { opt: number; stem: number }>();
+export function buildMonthlyTrendData(records: TimelineRecord[]) {
+  const counts: Record<string, { OPT: number; STEM: number }> = {}
+
   for (const r of records) {
-    const date = r.date_applied;
-    if (!date) continue;
-    const d = new Date(date + "T12:00:00Z");
-    // Round to Monday of the week
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    const monday = new Date(d.setDate(diff));
-    const key = monday.toISOString().slice(0, 10);
-    if (!map.has(key)) map.set(key, { opt: 0, stem: 0 });
-    const entry = map.get(key)!;
-    if (r.normalized_type === "STEM") entry.stem++;
-    else entry.opt++;
+    if (!r.date_applied) continue
+    const ym = toYearMonth(r.date_applied)
+    if (!counts[ym]) counts[ym] = { OPT: 0, STEM: 0 }
+    if (r.normalized_type === 'OPT') counts[ym].OPT++
+    else if (r.normalized_type === 'STEM') counts[ym].STEM++
   }
-  return Array.from(map.entries())
+
+  return Object.entries(counts)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([week, v]) => ({ week, ...v, total: v.opt + v.stem }));
-}
-
-/** Premium vs standard average processing times. */
-export function premiumComparisonData(records: TimelineRecord[]) {
-  const groups: Record<string, number[]> = {
-    "Premium": [],
-    "Standard": [],
-  };
-  for (const r of records) {
-    const days = parseInt(r.days_to_approval);
-    if (isNaN(days) || days < 0) continue;
-    if (r.premium_processing === "true") groups["Premium"].push(days);
-    else if (r.premium_processing === "false") groups["Standard"].push(days);
-  }
-  return Object.entries(groups).map(([label, vals]) => ({
-    label,
-    avgDays: avg(vals) ?? 0,
-    count: vals.length,
-  }));
-}
-
-/** Application funnel — how many records have each stage completed. */
-export function funnelData(records: TimelineRecord[]) {
-  const n = records.length;
-  return [
-    { stage: "Applied", count: records.filter((r) => r.date_applied).length },
-    { stage: "Biometrics", count: records.filter((r) => r.biometrics_completed_date).length },
-    { stage: "Approved", count: records.filter((r) => r.date_approved).length },
-    { stage: "Card Produced", count: records.filter((r) => r.date_card_produced).length },
-    { stage: "Card Received", count: records.filter((r) => r.date_card_received).length },
-  ];
-}
-
-/** Type breakdown for pie-style chart. */
-export function typeBreakdownData(records: TimelineRecord[]) {
-  const opt = records.filter((r) => r.normalized_type === "OPT").length;
-  const stem = records.filter((r) => r.normalized_type === "STEM").length;
-  return [
-    { name: "OPT", value: opt },
-    { name: "STEM OPT", value: stem },
-  ];
+    .map(([ym, c]) => ({ ym, ...c }))
 }

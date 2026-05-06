@@ -1,60 +1,38 @@
-import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { clsx, type ClassValue } from 'clsx'
+import { twMerge } from 'tailwind-merge'
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+  return twMerge(clsx(inputs))
 }
 
-export function formatDate(iso: string): string {
-  if (!iso) return "—";
-  try {
-    return new Date(iso + "T12:00:00Z").toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  } catch {
-    return iso;
-  }
+export function formatDate(dateStr: string | null): string {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr + 'T12:00:00Z')
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-export function avg(nums: number[]): number | null {
-  if (!nums.length) return null;
-  return Math.round(nums.reduce((a, b) => a + b, 0) / nums.length);
+export function formatShortDate(dateStr: string | null): string {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr + 'T12:00:00Z')
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-/** Group records by ISO week (YYYY-Www) of a date field. */
-export function groupByWeek(
-  records: { date: string }[]
-): { week: string; count: number }[] {
-  const map = new Map<string, number>();
-  for (const { date } of records) {
-    if (!date) continue;
-    const d = new Date(date + "T12:00:00Z");
-    const jan1 = new Date(d.getFullYear(), 0, 1);
-    const week = Math.ceil(((d.getTime() - jan1.getTime()) / 86400000 + jan1.getDay() + 1) / 7);
-    const key = `${d.getFullYear()}-W${String(week).padStart(2, "0")}`;
-    map.set(key, (map.get(key) ?? 0) + 1);
-  }
-  return Array.from(map.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([week, count]) => ({ week, count }));
+export function median(values: number[]): number | null {
+  if (values.length === 0) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 !== 0
+    ? sorted[mid]
+    : Math.round((sorted[mid - 1] + sorted[mid]) / 2)
 }
 
-/** Bucket an array of numbers into ranges. */
-export function histogram(
-  values: number[],
-  bucketSize = 10,
-  max = 200
-): { range: string; count: number }[] {
-  const buckets: Record<string, number> = {};
-  for (const v of values) {
-    if (v < 0 || v > max) continue;
-    const low = Math.floor(v / bucketSize) * bucketSize;
-    const key = `${low}–${low + bucketSize - 1}`;
-    buckets[key] = (buckets[key] ?? 0) + 1;
-  }
-  return Object.entries(buckets)
-    .sort(([a], [b]) => parseInt(a) - parseInt(b))
-    .map(([range, count]) => ({ range, count }));
+export function toYearMonth(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00Z')
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+export function formatYearMonth(ym: string): string {
+  const [year, month] = ym.split('-')
+  const d = new Date(parseInt(year), parseInt(month) - 1, 1)
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 }

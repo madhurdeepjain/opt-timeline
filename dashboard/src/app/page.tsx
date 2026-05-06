@@ -1,194 +1,132 @@
-"use client";
+'use client'
 
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import { RefreshCw, Github } from "lucide-react";
+import { useEffect, useState, useMemo } from 'react'
+import type { TimelineRecord, FilterState } from '@/lib/types'
+import { applyFilters, computeStats, buildHistogramData, buildMonthlyTrendData } from '@/lib/data'
+import { formatDate } from '@/lib/utils'
 
-import { TimelineRecord, FilterState } from "@/lib/types";
-import {
-  fetchRecords,
-  applyFilters,
-  computeStats,
-  processingHistogramData,
-  submissionTrendData,
-  premiumComparisonData,
-  funnelData,
-  typeBreakdownData,
-} from "@/lib/data";
+import Nav from '@/components/nav'
+import PersonalTimeline from '@/components/personal-timeline'
+import Filters from '@/components/filters'
+import StatsCards from '@/components/stats-cards'
+import { ProcessingTimeChart, MonthlyTrendChart } from '@/components/charts'
+import DataTable from '@/components/data-table'
+import Footer from '@/components/footer'
 
-import { StatsCards } from "@/components/stats-cards";
-import {
-  ProcessingTimeChart,
-  SubmissionTrendChart,
-  TypeBreakdownChart,
-  PremiumComparisonChart,
-  StatusFunnelChart,
-} from "@/components/charts";
-import { DataTable } from "@/components/data-table";
-import { Explorer } from "@/components/explorer";
-import { Filters } from "@/components/filters";
-import { PersonalTimeline } from "@/components/personal-timeline";
-import { Skeleton } from "@/components/ui/skeleton";
-
-const DEFAULT_FILTERS: FilterState = {
-  normalizedType: "all",
-  premiumProcessing: "all",
-  subreddit: "all",
-};
-
-export default function DashboardPage() {
-  const [records, setRecords] = useState<TimelineRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
-  const [lastFetch, setLastFetch] = useState<Date | null>(null);
-
-  async function load() {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchRecords();
-      setRecords(data);
-      setLastFetch(new Date());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load data");
-    } finally {
-      setLoading(false);
-    }
-  }
+export default function Home() {
+  const [records, setRecords] = useState<TimelineRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null)
+  const [filters, setFilters] = useState<FilterState>({ type: 'all', premium: 'all' })
 
   useEffect(() => {
-    load();
-  }, []);
+    fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/data`)
+      .then((r) => {
+        if (!r.ok) throw new Error('Failed to load data')
+        return r.json()
+      })
+      .then((data: TimelineRecord[]) => {
+        setRecords(data)
+        setFetchedAt(formatDate(new Date().toISOString().slice(0, 10)))
+        setLoading(false)
+      })
+      .catch((e) => {
+        setError(e.message)
+        setLoading(false)
+      })
+  }, [])
 
-  const filtered = applyFilters(records, filters);
-  const stats = computeStats(filtered);
+  const filtered = useMemo(() => applyFilters(records, filters), [records, filters])
+  const stats = useMemo(() => computeStats(filtered), [filtered])
+  const histogramData = useMemo(() => buildHistogramData(filtered), [filtered])
+  const trendData = useMemo(() => buildMonthlyTrendData(filtered), [filtered])
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border sticky top-0 z-10 bg-background/80 backdrop-blur">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">
-              OPT / STEM OPT Timeline Tracker
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              Community data from r/f1visa &amp; r/USCIS megathreads
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--canvas)' }}>
+      <Nav lastUpdated={fetchedAt} />
+
+      <main className="flex-1 max-w-6xl mx-auto w-full px-6 py-10 space-y-10">
+
+        {/* Hero */}
+        <div>
+          <h1
+            className="text-3xl font-bold mb-2"
+            style={{ color: 'var(--ink)', letterSpacing: '-0.5px' }}
+          >
+            OPT Processing Timelines
+          </h1>
+          <p className="text-base max-w-xl" style={{ color: 'var(--body)' }}>
+            Real processing times shared by students on Reddit. Use this to calibrate your expectations
+            and understand what&apos;s typical for your situation.
+          </p>
+        </div>
+
+        {/* Personal Timeline */}
+        <section>
+          <PersonalTimeline />
+        </section>
+
+        {/* Loading / Error states */}
+        {loading && (
+          <div className="space-y-4">
+            <div
+              className="rounded-md border h-24 animate-pulse"
+              style={{ backgroundColor: 'var(--surface-soft)', borderColor: 'var(--hairline)' }}
+            />
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[...Array(4)].map((_, i) => (
+                <div
+                  key={i}
+                  className="rounded-md border h-28 animate-pulse"
+                  style={{ backgroundColor: 'var(--surface-soft)', borderColor: 'var(--hairline)' }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div
+            className="rounded-md border p-6"
+            style={{ backgroundColor: '#f7d6d3', borderColor: '#cd4239' }}
+          >
+            <p className="font-semibold" style={{ color: '#cd4239' }}>
+              Could not load timeline data
+            </p>
+            <p className="text-sm mt-1" style={{ color: 'var(--body)' }}>
+              Make sure <code className="px-1 py-0.5 rounded text-xs" style={{ backgroundColor: 'var(--surface-soft)' }}>dashboard/data/timeline.csv</code> exists. Copy it from <code className="px-1 py-0.5 rounded text-xs" style={{ backgroundColor: 'var(--surface-soft)' }}>scraper/out/timeline.csv</code>.
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            {lastFetch && (
-              <span className="text-xs text-muted-foreground hidden sm:block">
-                Fetched {lastFetch.toLocaleTimeString()}
-              </span>
-            )}
-            <button
-              onClick={load}
-              disabled={loading}
-              className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border hover:bg-muted disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
-        {/* Error state */}
-        {error && (
-          <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-            {error}
-            {error.includes("404") && (
-              <p className="mt-1 text-xs opacity-80">
-                No data found — run the scraper first and copy the output to{" "}
-                <code>dashboard/data/timeline.csv</code>.
-              </p>
-            )}
-          </div>
         )}
 
-        {/* Loading skeletons */}
-        {loading && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-              {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28" />)}
-            </div>
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-72" />)}
-            </div>
-          </div>
-        )}
-
-        {/* Dashboard content */}
-        {!loading && !error && records.length > 0 && (
+        {!loading && !error && (
           <>
             {/* Filters */}
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex flex-wrap items-end gap-4 justify-between"
-            >
-              <Filters filters={filters} onChange={(f) => { setFilters(f); }} />
-              <p className="text-xs text-muted-foreground">
-                Showing {filtered.length.toLocaleString()} of {records.length.toLocaleString()} records
-              </p>
-            </motion.div>
-
-            {/* Stats cards */}
-            <StatsCards stats={stats} />
-
-            {/* Personal case timeline */}
-            <PersonalTimeline />
-
-            {/* Charts row 1 */}
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              <ProcessingTimeChart data={processingHistogramData(filtered)} />
-              <TypeBreakdownChart data={typeBreakdownData(filtered)} />
-            </div>
-
-            {/* Charts row 2 */}
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              <SubmissionTrendChart data={submissionTrendData(filtered)} />
-              <PremiumComparisonChart data={premiumComparisonData(filtered)} />
-            </div>
-
-            {/* Funnel — full width */}
-            <StatusFunnelChart data={funnelData(filtered)} />
-
-            {/* Custom Data Explorer */}
-            <section className="space-y-4">
-              <h2 className="text-base font-semibold">Interactive Explorer</h2>
-              <Explorer records={filtered} />
+            <section>
+              <Filters filters={filters} onChange={setFilters} total={filtered.length} />
             </section>
 
-            {/* Data table */}
-            <section className="space-y-4">
-              <h2 className="text-base font-semibold">Individual Records</h2>
+            {/* Stats */}
+            <section>
+              <StatsCards stats={stats} />
+            </section>
+
+            {/* Charts */}
+            <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <ProcessingTimeChart data={histogramData} />
+              <MonthlyTrendChart data={trendData} />
+            </section>
+
+            {/* Data Table */}
+            <section>
               <DataTable records={filtered} />
             </section>
           </>
         )}
-
-        {!loading && !error && records.length === 0 && (
-          <div className="text-center py-24 text-muted-foreground">
-            No records loaded. Run the scraper to populate data.
-          </div>
-        )}
       </main>
 
-      <footer className="border-t border-border mt-16 py-6 text-center text-xs text-muted-foreground">
-        Data sourced from community Reddit posts — not official USCIS data.
-        <a
-          href="https://github.com"
-          className="ml-3 inline-flex items-center gap-1 hover:text-foreground"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Github className="h-3.5 w-3.5" /> GitHub
-        </a>
-      </footer>
+      <Footer />
     </div>
-  );
+  )
 }

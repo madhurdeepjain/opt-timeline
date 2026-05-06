@@ -1,7 +1,7 @@
 """CLI entry-point: `uv run scrape`"""
 
 import traceback
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import click
@@ -46,7 +46,14 @@ def _build_record(comment: dict, thread: dict) -> dict | None:
         # Truncate raw text to keep CSV manageable
         "raw_text": body[:600].replace("\n", " "),
     }
-    return compute_derived(record)
+    record = compute_derived(record)
+
+    # Drop records where date_applied is in the future — likely a typo
+    date_applied = record.get("date_applied")
+    if date_applied and date_applied > date.today().isoformat():
+        return None
+
+    return record
 
 
 @click.command()

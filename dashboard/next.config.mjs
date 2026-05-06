@@ -1,13 +1,12 @@
 /** @type {import('next').NextConfig} */
-const config = {
-  basePath: "/opt-timeline",
+const nextConfig = {
+  basePath: '/opt-timeline',
   env: {
-    NEXT_PUBLIC_BASE_PATH: "/opt-timeline",
+    NEXT_PUBLIC_BASE_PATH: '/opt-timeline',
   },
-  // Tell Vercel's file-tracing to bundle the CSV alongside the API route
   outputFileTracingIncludes: {
-    "/api/data": ["./data/**/*"],
+    '/api/data': ['./data/**/*'],
   },
-};
+}
 
-export default config;
+export default nextConfig

@@ -1,210 +1,287 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { TimelineRecord } from "@/lib/types";
-import { Badge } from "@/components/ui/badge";
-import { formatDate } from "@/lib/utils";
-import { ExternalLink, ChevronUp, ChevronDown, Download } from "lucide-react";
+import { useState, useMemo } from 'react'
+import type { TimelineRecord } from '@/lib/types'
+import { formatDate, cn } from '@/lib/utils'
+import { Download, Search, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react'
+import Papa from 'papaparse'
 
-type SortKey = "date_applied" | "date_approved" | "days_to_approval" | "normalized_type";
+type SortKey = 'date_applied' | 'days_to_approval' | 'days_to_card' | 'normalized_type'
+type SortDir = 'asc' | 'desc'
 
-const EXPORT_COLUMNS: { key: keyof TimelineRecord; label: string }[] = [
-  { key: "normalized_type",           label: "Type" },
-  { key: "premium_processing",        label: "Premium Processing" },
-  { key: "date_applied",              label: "Date Applied" },
-  { key: "rfie_date",                 label: "RFIE Date" },
-  { key: "biometrics_requested_date", label: "Biometrics Requested" },
-  { key: "biometrics_completed_date", label: "Biometrics Completed" },
-  { key: "biometrics_location",       label: "Biometrics Location" },
-  { key: "noid",                      label: "NOID" },
-  { key: "noid_date",                 label: "NOID Date" },
-  { key: "date_approved",             label: "Date Approved" },
-  { key: "date_card_produced",        label: "Card Produced" },
-  { key: "date_card_shipped",         label: "Card Shipped" },
-  { key: "date_card_received",        label: "Card Received" },
-  { key: "days_to_approval",          label: "Days to Approval" },
-  { key: "days_to_card",              label: "Days to Card" },
-  { key: "country_of_citizenship",    label: "Country" },
-  { key: "subreddit",                 label: "Subreddit" },
-  { key: "permalink",                 label: "Link" },
-];
+const PAGE_SIZE = 25
 
 function exportCSV(records: TimelineRecord[]) {
-  const escape = (v: string) => `"${(v ?? "").replace(/"/g, '""')}"`;
-  const header = EXPORT_COLUMNS.map((c) => escape(c.label)).join(",");
-  const rows = records.map((r) =>
-    EXPORT_COLUMNS.map((c) => escape(r[c.key] as string)).join(",")
-  );
-  const csv = [header, ...rows].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `opt-timeline-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const exportable = records.map((r) => ({
+    type: r.normalized_type,
+    date_applied: r.date_applied ?? '',
+    days_to_approval: r.days_to_approval ?? '',
+    days_to_card: r.days_to_card ?? '',
+    premium_processing: r.premium_processing,
+    date_approved: r.date_approved ?? '',
+    date_card_received: r.date_card_received ?? '',
+    country_of_citizenship: r.country_of_citizenship ?? '',
+    biometrics_completed_date: r.biometrics_completed_date ?? '',
+    subreddit: r.subreddit,
+    permalink: r.permalink,
+  }))
+  const csv = Papa.unparse(exportable)
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `opt-timeline-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
-function sortRecords(records: TimelineRecord[], key: SortKey, asc: boolean) {
-  return [...records].sort((a, b) => {
-    const av = a[key] ?? "";
-    const bv = b[key] ?? "";
-    return asc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
-  });
+function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
+  if (col !== sortKey) return <ChevronUp size={12} style={{ color: 'var(--ash)' }} />
+  return sortDir === 'asc' ? (
+    <ChevronUp size={12} style={{ color: 'var(--ink)' }} />
+  ) : (
+    <ChevronDown size={12} style={{ color: 'var(--ink)' }} />
+  )
 }
 
-export function DataTable({ records }: { records: TimelineRecord[] }) {
-  const [sortKey, setSortKey] = useState<SortKey>("date_applied");
-  const [asc, setAsc] = useState(false);
-  const [page, setPage] = useState(0);
-  const pageSize = 25;
+export default function DataTable({ records }: { records: TimelineRecord[] }) {
+  const [search, setSearch] = useState('')
+  const [sortKey, setSortKey] = useState<SortKey>('date_applied')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [page, setPage] = useState(0)
 
-  const sorted = sortRecords(records, sortKey, asc);
-  const totalPages = Math.ceil(sorted.length / pageSize);
-  const visible = sorted.slice(page * pageSize, (page + 1) * pageSize);
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase().trim()
+    if (!q) return records
+    return records.filter(
+      (r) =>
+        r.normalized_type.toLowerCase().includes(q) ||
+        (r.country_of_citizenship ?? '').toLowerCase().includes(q) ||
+        (r.biometrics_location ?? '').toLowerCase().includes(q)
+    )
+  }, [records, search])
+
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      let av: string | number | null = a[sortKey]
+      let bv: string | number | null = b[sortKey]
+      if (av === null || av === undefined) av = sortDir === 'asc' ? Infinity : -Infinity
+      if (bv === null || bv === undefined) bv = sortDir === 'asc' ? Infinity : -Infinity
+      if (typeof av === 'string' && typeof bv === 'string') {
+        return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
+      }
+      return sortDir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number)
+    })
+  }, [filtered, sortKey, sortDir])
+
+  const totalPages = Math.ceil(sorted.length / PAGE_SIZE)
+  const pageData = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   function handleSort(key: SortKey) {
     if (key === sortKey) {
-      setAsc(!asc);
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     } else {
-      setSortKey(key);
-      setAsc(false);
+      setSortKey(key)
+      setSortDir('desc')
     }
-    setPage(0);
+    setPage(0)
   }
 
-  function SortIcon({ col }: { col: SortKey }) {
-    if (col !== sortKey) return <ChevronUp className="h-3 w-3 opacity-20" />;
-    return asc ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />;
-  }
-
-  function SortTh({ col, label }: { col: SortKey; label: string }) {
+  function Th({ col, label }: { col: SortKey; label: string }) {
     return (
       <th
-        className="px-3 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground select-none whitespace-nowrap"
+        className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest cursor-pointer select-none whitespace-nowrap"
+        style={{ color: 'var(--mute)' }}
         onClick={() => handleSort(col)}
       >
-        <span className="inline-flex items-center gap-1">
+        <span className="flex items-center gap-1">
           {label}
-          <SortIcon col={col} />
+          <SortIcon col={col} sortKey={sortKey} sortDir={sortDir} />
         </span>
       </th>
-    );
+    )
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex justify-end">
+    <div
+      className="rounded-md border"
+      style={{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--hairline)' }}
+    >
+      {/* Header row */}
+      <div
+        className="flex items-center gap-3 px-6 py-4 border-b"
+        style={{ borderColor: 'var(--hairline)' }}
+      >
+        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--mute)' }}>
+          Community Data
+        </p>
+        <h3 className="text-base font-bold flex-1" style={{ color: 'var(--ink)' }}>
+          All Records
+        </h3>
+        <div
+          className="flex items-center gap-2 px-3 py-1.5 rounded-md border"
+          style={{ borderColor: 'var(--hairline)', backgroundColor: 'var(--canvas)' }}
+        >
+          <Search size={13} style={{ color: 'var(--mute)' }} />
+          <input
+            type="text"
+            placeholder="Search type, country…"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(0) }}
+            className="text-sm bg-transparent outline-none w-40"
+            style={{ color: 'var(--ink)' }}
+          />
+        </div>
         <button
           onClick={() => exportCSV(sorted)}
-          className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border hover:bg-muted"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-bold transition-colors cursor-pointer"
+          style={{ backgroundColor: 'var(--surface-soft)', color: 'var(--ink)' }}
         >
-          <Download className="h-3.5 w-3.5" />
-          Export {sorted.length.toLocaleString()} records
+          <Download size={13} />
+          Export CSV
         </button>
       </div>
-      <div className="overflow-x-auto rounded-lg border">
+
+      {/* Table */}
+      <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-muted/40">
-            <tr>
-              <SortTh col="normalized_type" label="Type" />
-              <th className="px-3 py-3 text-left text-xs font-medium text-muted-foreground uppercase">PP</th>
-              <SortTh col="date_applied" label="Applied" />
-              <th className="px-3 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Biometrics</th>
-              <SortTh col="date_approved" label="Approved" />
-              <th className="px-3 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Card Received</th>
-              <SortTh col="days_to_approval" label="Days" />
-              <th className="px-3 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Source</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Link</th>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--hairline)' }}>
+              <Th col="normalized_type" label="Type" />
+              <Th col="date_applied" label="Applied" />
+              <Th col="days_to_approval" label="Days → Approval" />
+              <Th col="days_to_card" label="Days → Card" />
+              <th
+                className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
+                style={{ color: 'var(--mute)' }}
+              >
+                Premium
+              </th>
+              <th
+                className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
+                style={{ color: 'var(--mute)' }}
+              >
+                Approved
+              </th>
+              <th
+                className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
+                style={{ color: 'var(--mute)' }}
+              >
+                Card Received
+              </th>
+              <th
+                className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
+                style={{ color: 'var(--mute)' }}
+              >
+                Source
+              </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
-            <AnimatePresence mode="wait">
-              {visible.map((r) => (
-                <motion.tr
-                  key={r.comment_id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className="hover:bg-muted/20"
-                >
-                  <td className="px-3 py-2.5">
-                    <Badge variant={r.normalized_type === "STEM" ? "secondary" : "outline"}>
-                      {r.normalized_type || "?"}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    {r.premium_processing === "true" ? (
-                      <Badge variant="success">PP</Badge>
-                    ) : r.premium_processing === "false" ? (
-                      <Badge variant="outline">Std</Badge>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
+          <tbody>
+            {pageData.map((r, i) => (
+              <tr
+                key={r.comment_id}
+                style={{
+                  borderBottom: i < pageData.length - 1 ? '1px solid var(--hairline-soft)' : undefined,
+                }}
+              >
+                <td className="px-4 py-3">
+                  <span
+                    className={cn(
+                      'inline-block px-2 py-0.5 rounded-full text-xs font-semibold',
                     )}
-                  </td>
-                  <td className="px-3 py-2.5 tabular-nums">{formatDate(r.date_applied)}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{formatDate(r.biometrics_completed_date)}</td>
-                  <td className="px-3 py-2.5 tabular-nums">
-                    {r.date_approved ? (
-                      <span className="text-emerald-400">{formatDate(r.date_approved)}</span>
-                    ) : (
-                      <span className="text-muted-foreground">Pending</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5 tabular-nums">
-                    {r.date_card_received ? formatDate(r.date_card_received) : <span className="text-muted-foreground">—</span>}
-                  </td>
-                  <td className="px-3 py-2.5 tabular-nums font-mono text-xs">
-                    {r.days_to_approval ? (
-                      <span className="text-sky-400">{r.days_to_approval}d</span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5 text-xs text-muted-foreground">r/{r.subreddit}</td>
-                  <td className="px-3 py-2.5">
+                    style={{
+                      backgroundColor:
+                        r.normalized_type === 'STEM' ? '#fff3d1' : 'var(--surface-soft)',
+                      color: r.normalized_type === 'STEM' ? '#a07000' : 'var(--ink)',
+                    }}
+                  >
+                    {r.normalized_type || r.type || '—'}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                  {formatDate(r.date_applied)}
+                </td>
+                <td className="px-4 py-3 text-sm font-medium" style={{ color: 'var(--ink)' }}>
+                  {r.days_to_approval != null ? `${r.days_to_approval}d` : '—'}
+                </td>
+                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                  {r.days_to_card != null ? `${r.days_to_card}d` : '—'}
+                </td>
+                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                  {r.premium_processing === true ? (
+                    <span style={{ color: 'var(--primary-pressed)', fontWeight: 600 }}>Yes</span>
+                  ) : r.premium_processing === false ? (
+                    'No'
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                  {formatDate(r.date_approved)}
+                </td>
+                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                  {formatDate(r.date_card_received)}
+                </td>
+                <td className="px-4 py-3">
+                  {r.permalink && (
                     <a
-                      href={r.permalink}
+                      href={`https://reddit.com${r.permalink}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                      style={{ color: 'var(--mute)' }}
+                      className="hover:opacity-70 transition-opacity"
                     >
-                      <ExternalLink className="h-3.5 w-3.5" />
+                      <ExternalLink size={13} />
                     </a>
-                  </td>
-                </motion.tr>
-              ))}
-            </AnimatePresence>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {pageData.length === 0 && (
+              <tr>
+                <td
+                  colSpan={8}
+                  className="px-4 py-12 text-center text-sm"
+                  style={{ color: 'var(--mute)' }}
+                >
+                  No records match your search.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            Showing {page * pageSize + 1}–{Math.min((page + 1) * pageSize, sorted.length)} of {sorted.length}
+        <div
+          className="flex items-center justify-between px-6 py-3 border-t"
+          style={{ borderColor: 'var(--hairline)' }}
+        >
+          <span className="text-xs" style={{ color: 'var(--mute)' }}>
+            {sorted.length.toLocaleString()} records · page {page + 1} of {totalPages}
           </span>
           <div className="flex gap-2">
             <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={page === 0}
-              onClick={() => setPage(page - 1)}
-              className="px-3 py-1 rounded border border-border hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              className="px-3 py-1 rounded-md text-xs font-bold disabled:opacity-40 cursor-pointer disabled:cursor-default"
+              style={{ backgroundColor: 'var(--surface-soft)', color: 'var(--ink)' }}
             >
-              Prev
+              ← Prev
             </button>
             <button
-              disabled={page >= totalPages - 1}
-              onClick={() => setPage(page + 1)}
-              className="px-3 py-1 rounded border border-border hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              disabled={page === totalPages - 1}
+              className="px-3 py-1 rounded-md text-xs font-bold disabled:opacity-40 cursor-pointer disabled:cursor-default"
+              style={{ backgroundColor: 'var(--surface-soft)', color: 'var(--ink)' }}
             >
-              Next
+              Next →
             </button>
           </div>
         </div>
       )}
     </div>
-  );
+  )
 }

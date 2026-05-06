@@ -1,73 +1,215 @@
-"use client";
+'use client'
 
-import { motion } from "framer-motion";
-import { CheckCircle2, CircleDashed } from "lucide-react";
+import { Check } from 'lucide-react'
+import { formatShortDate } from '@/lib/utils'
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+const EVENTS = [
+  { label: 'Applied (Standard)',            short: 'Applied',    date: '2026-03-10' },
+  { label: 'Biometrics Scheduled Notice',   short: 'Bio Notice', date: '2026-03-21' },
+  { label: 'Biometrics Appointment',        short: 'Biometrics', date: '2026-04-06' },
+  { label: 'Upgraded to Premium Processing',short: '→ Premium',  date: '2026-04-14', premium: true },
+  { label: 'Received Email Approval',       short: 'Approved',   date: '2026-04-21' },
+  { label: 'Approval in USCIS Portal',      short: 'Portal',     date: '2026-04-23' },
+  { label: 'EAD Card Produced',             short: 'Card Out',   date: '2026-04-28' },
+  { label: 'EAD Card Received',             short: 'Card In',    date: '2026-05-02' },
+]
 
-type PersonalEvent = {
-  label: string;
-  date: string;
-  done: boolean;
-};
+const START  = new Date('2026-03-10T12:00:00Z')
+const END    = new Date('2026-05-02T12:00:00Z')
+const TOTAL_MS   = END.getTime() - START.getTime()
+const TOTAL_DAYS = Math.round(TOTAL_MS / 86_400_000) // 53
 
-const PERSONAL_TIMELINE: PersonalEvent[] = [
-  { label: "Applied (Standard)", date: "2026-03-10", done: true },
-  { label: "Biometrics Scheduled Notice", date: "2026-03-21", done: true },
-  { label: "Biometrics Appointment", date: "2026-04-06", done: true },
-  { label: "Upgraded to Premium Processing", date: "2026-04-14", done: true },
-  { label: "Received Email Approval", date: "2026-04-21", done: true },
-  { label: "Approval in USCIS Portal", date: "2026-04-23", done: true },
-  { label: "EAD Card Produced (notification)", date: "2026-04-28", done: true },
-  { label: "EAD Card Received", date: "2026-05-02", done: true },
-];
-
-function formatEventDate(value: string): string {
-  if (value === "Pending") return value;
-
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) return value;
-
-  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+// Returns 0→1 fraction along the timeline
+function frac(dateStr: string) {
+  return (new Date(dateStr + 'T12:00:00Z').getTime() - START.getTime()) / TOTAL_MS
 }
 
-export function PersonalTimeline() {
-  return (
-    <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-foreground">My Personal Timeline</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ol className="relative ml-2 border-l border-border pl-5">
-            {PERSONAL_TIMELINE.map((event, index) => (
-              <li key={`${event.label}-${index}`} className="relative pb-5 last:pb-0">
-                <span
-                  className={`absolute -left-[1.8rem] inline-flex h-6 w-6 items-center justify-center rounded-full border ${
-                    event.done
-                      ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-                      : "border-amber-500/40 bg-amber-500/15 text-amber-300"
-                  }`}
-                >
-                  {event.done ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CircleDashed className="h-3.5 w-3.5" />}
-                </span>
+// Layout constants (px)
+const H_PAD  = 44   // horizontal inset so first/last dot centres sit at the card edge
+const DOT    = 28   // dot diameter
+const LINE_Y = 50   // y of the centre line
+const H      = 106  // total track height
+const dotTop = LINE_Y - DOT / 2  // = 36
 
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{event.label}</p>
-                    <p className="text-xs text-muted-foreground">{event.done ? "Completed" : "Pending"}</p>
+export default function PersonalTimeline() {
+  return (
+    <div
+      className="rounded-md border p-6"
+      style={{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--hairline)' }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--mute)' }}>
+            My Timeline
+          </p>
+          <h2 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>
+            My OPT Case Journey
+          </h2>
+        </div>
+        <div className="text-right">
+          <p className="text-[26px] font-extrabold leading-none" style={{ color: 'var(--ink)', letterSpacing: '-0.6px' }}>
+            {TOTAL_DAYS}
+          </p>
+          <p className="text-xs" style={{ color: 'var(--mute)' }}>days total</p>
+        </div>
+      </div>
+
+      {/* ── Desktop: proportional horizontal timeline ── */}
+      <div className="hidden md:block">
+        <div className="relative w-full" style={{ height: H }}>
+
+          {/* Centre line */}
+          <div
+            className="absolute"
+            style={{
+              top: LINE_Y,
+              left: H_PAD,
+              right: H_PAD,
+              height: 1,
+              backgroundColor: 'var(--hairline)',
+            }}
+          />
+
+          {EVENTS.map((event, i) => {
+            const f     = frac(event.date)
+            const above = i % 2 === 1   // odd indices: label above the line
+
+            return (
+              <div
+                key={event.date}
+                className="absolute"
+                style={{
+                  // dot centre tracks the fraction of the inner width, then offset by H_PAD
+                  left: `calc(${H_PAD}px + (100% - ${H_PAD * 2}px) * ${f})`,
+                  transform: 'translateX(-50%)',
+                  top: 0,
+                  height: H,
+                }}
+              >
+                {/* Label ABOVE the line (odd events) */}
+                {above && (
+                  <div
+                    className="absolute text-center whitespace-nowrap"
+                    style={{
+                      bottom: H - dotTop + 5,
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                    }}
+                  >
+                    <p className="text-[11px] font-semibold leading-tight" style={{ color: 'var(--ink)' }}>
+                      {event.short}
+                    </p>
+                    <p className="text-[10px] mt-0.5" style={{ color: 'var(--mute)' }}>
+                      {formatShortDate(event.date)}
+                    </p>
                   </div>
-                  <span className="text-xs text-muted-foreground">{formatEventDate(event.date)}</span>
+                )}
+
+                {/* Dot — tooltip is a child so group-hover stays active while reading it */}
+                <div
+                  className="group absolute rounded-full flex items-center justify-center cursor-default"
+                  style={{
+                    width: DOT,
+                    height: DOT,
+                    top: dotTop,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    backgroundColor: event.premium ? 'var(--primary-pressed)' : 'var(--ink)',
+                    color: event.premium ? 'var(--ink)' : '#fff',
+                    zIndex: 2,
+                  }}
+                >
+                  <Check size={13} strokeWidth={2.5} />
+
+                  {/* Tooltip — appears on the side opposite the label */}
+                  <div
+                    className="pointer-events-none absolute opacity-0 group-hover:opacity-100 transition-opacity z-20 whitespace-nowrap"
+                    style={{
+                      ...(above
+                        ? { top: 'calc(100% + 6px)' }       // label above → tooltip below dot
+                        : { bottom: 'calc(100% + 6px)' }),  // label below → tooltip above dot
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      backgroundColor: 'var(--surface-dark)',
+                      color: '#fff',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      padding: '3px 8px',
+                      borderRadius: 4,
+                    }}
+                  >
+                    {event.label}
+                  </div>
                 </div>
-              </li>
-            ))}
-          </ol>
-        </CardContent>
-      </Card>
-    </motion.section>
-  );
+
+                {/* Label BELOW the line (even events) */}
+                {!above && (
+                  <div
+                    className="absolute text-center whitespace-nowrap"
+                    style={{
+                      top: dotTop + DOT + 5,
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                    }}
+                  >
+                    <p className="text-[11px] font-semibold leading-tight" style={{ color: 'var(--ink)' }}>
+                      {event.short}
+                    </p>
+                    <p className="text-[10px] mt-0.5" style={{ color: 'var(--mute)' }}>
+                      {formatShortDate(event.date)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* ── Mobile: vertical list with full labels and day gaps ── */}
+      <div className="md:hidden">
+        {EVENTS.map((event, i) => {
+          const isLast = i === EVENTS.length - 1
+          const daysSincePrev = i > 0
+            ? Math.round(
+                (new Date(event.date + 'T12:00:00Z').getTime() -
+                 new Date(EVENTS[i - 1].date + 'T12:00:00Z').getTime()) / 86_400_000
+              )
+            : null
+
+          return (
+            <div key={event.date} className="flex items-start gap-3">
+              <div className="flex flex-col items-center flex-shrink-0">
+                <div
+                  className="w-6 h-6 rounded-full flex items-center justify-center"
+                  style={{
+                    backgroundColor: event.premium ? 'var(--primary-pressed)' : 'var(--ink)',
+                    color: event.premium ? 'var(--ink)' : '#fff',
+                  }}
+                >
+                  <Check size={11} strokeWidth={2.5} />
+                </div>
+                {!isLast && (
+                  <div
+                    className="w-px flex-1 mt-1"
+                    style={{ backgroundColor: 'var(--hairline-soft)', minHeight: 20 }}
+                  />
+                )}
+              </div>
+              <div className="pb-4">
+                <p className="text-sm font-semibold leading-tight" style={{ color: 'var(--ink)' }}>
+                  {event.label}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--mute)' }}>
+                  {formatShortDate(event.date)}
+                  {daysSincePrev !== null && ` · +${daysSincePrev}d`}
+                </p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }

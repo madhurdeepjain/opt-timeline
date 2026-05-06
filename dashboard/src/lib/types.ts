@@ -1,45 +1,43 @@
 export interface TimelineRecord {
-  comment_id: string;
-  author: string;
-  created_utc: string;
-  subreddit: string;
-  permalink: string;
-  type: string;
-  normalized_type: "OPT" | "STEM" | "";
-  premium_processing: string;       // "true" | "false" | ""
-  date_applied: string;             // YYYY-MM-DD | ""
-  rfie_date: string;
-  biometrics_requested_date: string;
-  biometrics_completed_date: string;
-  biometrics_location: string;
-  noid: string;                     // "true" | "false" | ""
-  noid_date: string;
-  date_approved: string;
-  date_card_produced: string;
-  date_card_shipped: string;
-  date_card_received: string;
-  country_of_citizenship: string;
-  days_to_approval: string;         // number as string | ""
-  days_to_card: string;
-  raw_text: string;
-  parse_errors: string;
+  comment_id: string
+  author: string
+  created_utc: string
+  subreddit: string
+  permalink: string
+  type: string
+  normalized_type: 'OPT' | 'STEM' | string
+  premium_processing: boolean | null
+  date_applied: string | null
+  rfie_date: string | null
+  biometrics_requested_date: string | null
+  biometrics_completed_date: string | null
+  biometrics_location: string | null
+  noid: boolean | null
+  noid_date: string | null
+  date_approved: string | null
+  date_card_produced: string | null
+  date_card_shipped: string | null
+  date_card_received: string | null
+  country_of_citizenship: string | null
+  days_to_approval: number | null
+  days_to_card: number | null
+  raw_text: string
+  parse_errors: string[]
+}
+
+export interface FilterState {
+  type: 'all' | 'OPT' | 'STEM'
+  premium: 'all' | 'standard' | 'premium'
 }
 
 export interface DashboardStats {
-  total: number;
-  approved: number;
-  pending: number;
-  avgDaysToApproval: number | null;
-  avgDaysToCard: number | null;
-  optCount: number;
-  stemCount: number;
-  premiumCount: number;
-  standardCount: number;
-  lastUpdated: string | null;
+  total: number
+  optCount: number
+  stemCount: number
+  approvedCount: number
+  medianDaysToApproval: number | null
+  medianDaysStandard: number | null
+  medianDaysPremium: number | null
+  premiumPct: number
+  latestAppliedDate: string | null
 }
-
-export type FilterState = {
-  normalizedType: "all" | "OPT" | "STEM";
-  premiumProcessing: "all" | "true" | "false";
-  subreddit: "all" | "f1visa" | "USCIS";
-};

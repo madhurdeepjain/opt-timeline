@@ -1,23 +1,23 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import { Analytics } from "@vercel/analytics/react";
-import "./globals.css";
+import type { Metadata } from 'next'
+import { IBM_Plex_Sans } from 'next/font/google'
+import './globals.css'
 
-const inter = Inter({ subsets: ["latin"] });
+const ibmPlexSans = IBM_Plex_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-ibm-plex-sans',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
-  title: "OPT/STEM OPT Processing Timeline Tracker",
-  description:
-    "Community-sourced EAD processing timelines aggregated from Reddit megathreads",
-};
+  title: 'OPT Timeline',
+  description: 'Community OPT & STEM OPT processing timelines from Reddit',
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
-      <body className={inter.className}>
-        {children}
-        <Analytics />
-      </body>
+    <html lang="en" className={ibmPlexSans.variable}>
+      <body className="font-sans antialiased">{children}</body>
     </html>
-  );
+  )
 }

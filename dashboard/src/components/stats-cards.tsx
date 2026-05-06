@@ -1,86 +1,77 @@
-"use client";
+import type { DashboardStats } from '@/lib/types'
+import { formatDate } from '@/lib/utils'
+import { Clock, Users, Zap, CalendarDays } from 'lucide-react'
 
-import { motion } from "framer-motion";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { DashboardStats } from "@/lib/types";
-import { Clock, CheckCircle2, Hourglass, Users } from "lucide-react";
-
-const container = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.08 } },
-};
-const item = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.4 } },
-};
-
-interface StatCardProps {
-  title: string;
-  value: string | number;
-  sub?: string;
-  icon: React.ReactNode;
-  accent?: string;
-}
-
-function StatCard({ title, value, sub, icon, accent = "text-foreground" }: StatCardProps) {
+function Card({
+  icon,
+  label,
+  value,
+  sub,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  sub?: string
+}) {
   return (
-    <motion.div variants={item}>
-      <Card className="relative overflow-hidden">
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <CardTitle>{title}</CardTitle>
-          <div className="text-muted-foreground">{icon}</div>
-        </CardHeader>
-        <CardContent>
-          <div className={`text-3xl font-bold ${accent}`}>{value}</div>
-          {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
-}
-
-export function StatsCards({ stats }: { stats: DashboardStats }) {
-  const approvalPct =
-    stats.total > 0 ? Math.round((stats.approved / stats.total) * 100) : 0;
-
-  return (
-    <motion.div
-      variants={container}
-      initial="hidden"
-      animate="show"
-      className="grid grid-cols-2 gap-4 lg:grid-cols-4"
+    <div
+      className="rounded-md border p-6 flex flex-col gap-3"
+      style={{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--hairline)' }}
     >
-      <StatCard
-        title="Total Records"
+      <div className="flex items-center gap-2">
+        <div style={{ color: 'var(--mute)' }}>{icon}</div>
+        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--mute)' }}>
+          {label}
+        </p>
+      </div>
+      <p className="text-[26px] font-extrabold leading-none" style={{ color: 'var(--ink)', letterSpacing: '-0.6px' }}>
+        {value}
+      </p>
+      {sub && (
+        <p className="text-sm" style={{ color: 'var(--mute)' }}>
+          {sub}
+        </p>
+      )}
+    </div>
+  )
+}
+
+export default function StatsCards({ stats }: { stats: DashboardStats }) {
+  const premiumLabel =
+    stats.medianDaysPremium !== null && stats.medianDaysStandard !== null
+      ? `${stats.medianDaysPremium}d premium · ${stats.medianDaysStandard}d standard`
+      : stats.medianDaysPremium !== null
+      ? `${stats.medianDaysPremium}d premium`
+      : stats.medianDaysStandard !== null
+      ? `${stats.medianDaysStandard}d standard`
+      : undefined
+
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <Card
+        icon={<Users size={14} />}
+        label="Total Records"
         value={stats.total.toLocaleString()}
-        sub={`OPT: ${stats.optCount}  ·  STEM: ${stats.stemCount}`}
-        icon={<Users className="h-4 w-4" />}
+        sub={`${stats.optCount} OPT · ${stats.stemCount} STEM`}
       />
-      <StatCard
-        title="Approved"
-        value={stats.approved.toLocaleString()}
-        sub={`${approvalPct}% of total`}
-        icon={<CheckCircle2 className="h-4 w-4" />}
-        accent="text-emerald-400"
+      <Card
+        icon={<Clock size={14} />}
+        label="Median Approval"
+        value={stats.medianDaysToApproval !== null ? `${stats.medianDaysToApproval}d` : '—'}
+        sub="days from applied to approved"
       />
-      <StatCard
-        title="Pending"
-        value={stats.pending.toLocaleString()}
-        sub="awaiting approval"
-        icon={<Hourglass className="h-4 w-4" />}
-        accent="text-amber-400"
+      <Card
+        icon={<Zap size={14} />}
+        label="Premium Processing"
+        value={`${stats.premiumPct}%`}
+        sub={premiumLabel}
       />
-      <StatCard
-        title="Avg Processing"
-        value={stats.avgDaysToApproval != null ? `${stats.avgDaysToApproval}d` : "—"}
-        sub={
-          stats.avgDaysToCard != null
-            ? `${stats.avgDaysToCard}d applied → card received`
-            : "applied → approved"
-        }
-        icon={<Clock className="h-4 w-4" />}
-        accent="text-sky-400"
+      <Card
+        icon={<CalendarDays size={14} />}
+        label="Data Through"
+        value={stats.latestAppliedDate ? formatDate(stats.latestAppliedDate) : '—'}
+        sub="most recent application"
       />
-    </motion.div>
-  );
+    </div>
+  )
 }
