@@ -111,6 +111,9 @@ _KNOWN_COUNTRIES = (
     "Sri Lanka", "Iran", "Nigeria", "Kenya", "France", "Italy", "Spain",
     "Russia", "Ukraine", "Argentina", "Chile", "Peru", "Venezuela",
     "Saudi Arabia", "United Arab Emirates", "Israel", "Australia",
+    "South Africa", "Ethiopia", "Morocco", "Jordan", "Lebanon", "Poland",
+    "Netherlands", "Belgium", "Sweden", "Norway", "Denmark", "Finland",
+    "Switzerland", "Austria", "Portugal", "Greece", "North Korea",
 )
 
 _DEMONYMS = {
@@ -128,8 +131,14 @@ _DEMONYMS = {
     "korean": "South Korea",
     "korea": "South Korea",
     "chinese": "China",
+    "mainland china": "China",
     "vietnamese": "Vietnam",
     "japanese": "Japan",
+    "thai": "Thailand",
+    "burmese": "Myanmar",
+    "singaporean": "Singapore",
+    "malaysian": "Malaysia",
+    "sri lankan": "Sri Lanka",
     "filipino": "Philippines",
     "filipina": "Philippines",
     "pakistani": "Pakistan",
@@ -139,6 +148,10 @@ _DEMONYMS = {
     "italian": "Italy",
     "mexican": "Mexico",
     "canadian": "Canada",
+    "australian": "Australia",
+    "british": "United Kingdom",
+    "indonesian": "Indonesia",
+    "colombian": "Colombia",
 }
 
 _RESTRICTED_PHRASES = (
@@ -164,7 +177,7 @@ _RESTRICTED_COUNTRIES = frozenset({
 })
 
 _CITZ_NOISE_CUTS = (
-    "//", ";", "service center", "silent api", "start date", " / ",
+    "//", ";", "service center", "silent api", "start date", " / ", "\n",
 )
 
 
@@ -173,12 +186,13 @@ def _normalize_citizenship(raw: str) -> tuple[Optional[str], Optional[str]]:
     if not raw:
         return None, None
     v = raw.strip().lower()
-    v = re.sub(r"^[\\/\-\s.|]+", "", v)
+    # Strip common markdown/prefix noise
+    v = re.sub(r"^[\\/\-\s.|*]+", "", v)
     for cut in _CITZ_NOISE_CUTS:
         idx = v.find(cut)
         if idx != -1:
             v = v[:idx]
-    v = v.strip(" -,.;:|")
+    v = v.strip(" -,.;:|()[]")
     if not v or v in NULL_VALUES:
         return None, None
 
@@ -191,16 +205,24 @@ def _normalize_citizenship(raw: str) -> tuple[Optional[str], Optional[str]]:
             return "restricted"
         return "non_restricted"
 
+    # 1. Exact match against demonyms or known countries
     if v in _DEMONYMS:
         c = _DEMONYMS[v]
         return c, _ban_for(c)
     for c in _KNOWN_COUNTRIES:
         if c.lower() == v:
             return c, _ban_for(c)
-    for c in _KNOWN_COUNTRIES:
+
+    # 2. Word-boundary search for longer names first (to avoid "Korea" matching "North Korea")
+    sorted_countries = sorted(_KNOWN_COUNTRIES, key=len, reverse=True)
+    for c in sorted_countries:
         if re.search(r"\b" + re.escape(c.lower()) + r"\b", v):
             return c, _ban_for(c)
-    for d, c in _DEMONYMS.items():
+
+    # 3. Word-boundary search for demonyms
+    # Sort demonyms by length to handle things like "South Korean" before "Korean"
+    sorted_demonyms = sorted(_DEMONYMS.items(), key=lambda x: len(x[0]), reverse=True)
+    for d, c in sorted_demonyms:
         if re.search(r"\b" + re.escape(d) + r"\b", v):
             return c, _ban_for(c)
 
@@ -303,6 +325,10 @@ _DATE_FIELDS = frozenset({
 
 _LOC_DATE_RE = re.compile(r"\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}")
 
+# Splitting on newlines OR common bullet/separators (*, •, |) when they look like field starts.
+# We avoid splitting on '-' in the middle of a line to prevent breaking hyphenated words or KV pairs.
+_LINE_SPLIT_RE = re.compile(r"\n|\s{3,}|(?<=\s)[•*]\s*|^\s*[*\-•|]\s*", re.MULTILINE)
+
 
 def parse_comment(body: str) -> dict:
     """
@@ -333,12 +359,23 @@ def parse_comment(body: str) -> dict:
 
     text = _clean(body)
 
-    for raw_line in text.split("\n"):
+    for raw_line in _LINE_SPLIT_RE.split(text):
         line = raw_line.strip()
         if not line:
             continue
 
         key, value = _split_kv(line)
+        
+        # Fallback: if no KV separator found, see if the line starts with a known field name
+        # followed by text (e.g. "Citizenship India").
+        if not key:
+            for pat, field in _FIELD_PATTERNS:
+                m = pat.match(line)
+                if m:
+                    key = line[:m.end()]
+                    value = line[m.end():].strip()
+                    break
+
         if not key or value is None:
             continue
 
@@ -363,7 +400,7 @@ def parse_comment(body: str) -> dict:
                 m = _LOC_DATE_RE.search(value)
                 if m:
                     suffix = value[m.end():].strip(" -|,")
-                    if suffix and suffix.lower() not in NULL_VALUES:
+                    if suffix and suffix.lower() not in NULL_VALUES and ":" not in suffix:
                         result["biometrics_location"] = suffix
 
         elif field in _DATE_FIELDS:
@@ -378,12 +415,13 @@ def parse_comment(body: str) -> dict:
                     result["noid_date"] = parse_date(value)
 
         elif field == "country_of_citizenship":
-            if result["country_of_citizenship"] is None and result["ban_status"] is None:
-                country, ban = _normalize_citizenship(value)
-                if country:
-                    result["country_of_citizenship"] = country
-                if ban:
-                    result["ban_status"] = ban
+            # Extract country and ban status. We allow setting them independently
+            # across different lines if they were initially None.
+            country, ban = _normalize_citizenship(value)
+            if country and result["country_of_citizenship"] is None:
+                result["country_of_citizenship"] = country
+            if ban and result["ban_status"] is None:
+                result["ban_status"] = ban
 
     return result
 

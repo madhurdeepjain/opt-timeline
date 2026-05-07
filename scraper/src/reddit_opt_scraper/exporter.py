@@ -37,11 +37,9 @@ def _rehabilitate(row: dict) -> dict | None:
     Returns None if the row should be dropped (future-dated, no usable data).
     """
     r = dict(row)
-    # Re-parse from raw_text if it still carries newlines (post-fix records).
-    # Old records were stored as a single line — re-parsing won't recover keys
-    # but the existing parsed columns are kept intact.
+    # Re-parse from raw_text to pick up fields missed by older parser versions.
     raw = r.get("raw_text") or ""
-    if raw and "\n" in raw:
+    if raw:
         parsed = parse_comment(raw)
         for k, v in parsed.items():
             # Only fill if currently empty — never overwrite existing value
