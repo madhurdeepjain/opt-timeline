@@ -12,16 +12,10 @@ _RETRY_BASE = 60  # seconds for first 429 backoff if no Retry-After header
 
 _HEADERS = {
     "User-Agent": USER_AGENT,
-    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Accept": "application/json, */*;q=0.5",
     "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "DNT": "1",
+    "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Cache-Control": "max-age=0",
 }
 
 
@@ -40,8 +34,22 @@ def _get(client: httpx.Client, url: str, params: dict | None = None) -> dict:
             time.sleep(wait)
             continue
         resp.raise_for_status()
+        _maybe_throttle(resp)
         return resp.json()
     raise RuntimeError(f"Gave up after {_MAX_RETRIES} retries: {url}")
+
+
+def _maybe_throttle(resp: httpx.Response) -> None:
+    """Sleep extra if Reddit's rate limit headers say we're running low."""
+    try:
+        remaining = float(resp.headers.get("X-Ratelimit-Remaining", 100))
+        reset_secs = float(resp.headers.get("X-Ratelimit-Reset", 0))
+        if remaining < 5 and reset_secs > 0:
+            wait = min(reset_secs, 120)
+            print(f"  [rate-limit] {remaining:.0f} requests left in window — sleeping {wait:.0f}s", flush=True)
+            time.sleep(wait)
+    except (ValueError, TypeError):
+        pass
 
 
 def _extract_top_level(listing_children: list) -> tuple[list[dict], list[str]]:
@@ -60,7 +68,7 @@ def _fetch_more_children(
     post_id: str,
     more_ids: list[str],
     client: httpx.Client,
-    batch_size: int = 20,
+    batch_size: int = 100,
 ) -> list[dict]:
     """Fetch additional comments via morechildren API (no auth needed)."""
     all_comments: list[dict] = []
@@ -81,11 +89,13 @@ def _fetch_more_children(
                 },
             )
             things = data.get("json", {}).get("data", {}).get("things", [])
-            fetched = sum(1 for t in things if t["kind"] == "t1")
-            for thing in things:
-                if thing["kind"] == "t1":
-                    all_comments.append(thing["data"])
-            print(f"  [morechildren] batch {batch_num}/{total_batches} → {fetched} comments", flush=True)
+            # Only keep top-level comments (parent is the post, t3_xxx), not replies
+            top_level = [
+                t for t in things
+                if t["kind"] == "t1" and t["data"].get("parent_id", "").startswith("t3_")
+            ]
+            all_comments.extend(t["data"] for t in top_level)
+            print(f"  [morechildren] batch {batch_num}/{total_batches} → {len(top_level)} top-level comments ({len(things)} total things)", flush=True)
         except Exception as exc:
             print(f"  [warn] morechildren batch {batch_num} failed: {exc}", flush=True)
         time.sleep(REQUEST_DELAY)

@@ -22,7 +22,6 @@ export interface TimelineRecord {
   days_to_approval: number | null
   days_to_card: number | null
   raw_text: string
-  parse_errors: string[]
 }
 
 export interface ThreadOption {

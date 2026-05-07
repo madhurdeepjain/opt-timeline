@@ -56,12 +56,10 @@ CSV_FIELDS = [
     "days_to_approval",
     "days_to_card",
     "raw_text",
-    "parse_errors",
 ]
 
-USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
-)
-REQUEST_DELAY = 3.0  # seconds between requests — Reddit's unauthenticated limit is ~10 req/min
+# Reddit's API guidelines ask for a unique, descriptive UA. We hit public .json
+# endpoints unauthenticated (no OAuth), but a self-identifying UA still complies
+# better than a generic browser string and is less likely to be filtered.
+USER_AGENT = "python:reddit-opt-scraper:1.1 (timeline aggregation; +https://github.com/madhurdjain/reddit-opt)"
+REQUEST_DELAY = 6.0  # seconds between requests — Reddit unauthenticated limit is 10 req/min (6s/req)

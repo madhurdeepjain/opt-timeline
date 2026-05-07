@@ -58,7 +58,6 @@ function mapRow(row: Record<string, string>): TimelineRecord {
     days_to_approval: parseNum(row.days_to_approval),
     days_to_card: parseNum(row.days_to_card),
     raw_text: row.raw_text ?? '',
-    parse_errors: [],
   }
 }
 

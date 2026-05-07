@@ -104,7 +104,7 @@ _BULLET = re.compile(r"^\s*[*\-•]\s*", re.MULTILINE)
 
 _HTML_ENTITIES = {
     "&amp;": "&", "&lt;": "<", "&gt;": ">",
-    "&nbsp;": " ", "&#x200B;": "", "\u200b": "",
+    "&nbsp;": " ", "&#x200B;": "", "\u200b": "", "\u2060": "",
     "\u2011": "-", "\u2013": "-", "\u2014": "-",
 }
 
@@ -157,6 +157,10 @@ _FIELD_PATTERNS: list[tuple[re.Pattern, str]] = [
 
 _PAREN_NOTE = re.compile(r"\s*\(.*?\)")  # strip "(if applicable)" etc.
 
+# Splits "Key - value" / "Key – value" / "Key — value" only when surrounded by spaces,
+# so dates like "12-01-2026" and key fragments like "Bio-metrics" are not split.
+_KV_DASH = re.compile(r"^([^\d][^\-–—]*?)\s+[-–—]\s+(.+)$")
+
 
 def _normalize_key(raw_key: str) -> Optional[str]:
     key = _PAREN_NOTE.sub("", raw_key.strip().lower()).strip()
@@ -166,7 +170,27 @@ def _normalize_key(raw_key: str) -> Optional[str]:
     return None
 
 
+def _split_kv(line: str) -> tuple[Optional[str], Optional[str]]:
+    """Try `key: value` first; fall back to `key - value` (space-dash-space)."""
+    if ":" in line:
+        k, _, v = line.partition(":")
+        return k.strip(), v.strip()
+    m = _KV_DASH.match(line)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return None, None
+
+
 # ── Main parser ───────────────────────────────────────────────────────────────
+
+_DATE_FIELDS = frozenset({
+    "date_applied", "rfie_date", "biometrics_requested_date",
+    "date_approved", "date_card_produced", "date_card_shipped",
+    "date_card_received",
+})
+
+_LOC_DATE_RE = re.compile(r"\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}")
+
 
 def parse_comment(body: str) -> dict:
     """
@@ -189,7 +213,6 @@ def parse_comment(body: str) -> dict:
         "date_card_shipped": None,
         "date_card_received": None,
         "country_of_citizenship": None,
-        "parse_errors": [],
     }
 
     if not body:
@@ -199,23 +222,19 @@ def parse_comment(body: str) -> dict:
 
     for raw_line in text.split("\n"):
         line = raw_line.strip()
-        if not line or ":" not in line:
+        if not line:
             continue
 
-        key_part, _, value_part = line.partition(":")
-        key = key_part.strip()
-        value = value_part.strip()
-
-        if not key:
+        key, value = _split_kv(line)
+        if not key or value is None:
             continue
 
         field = _normalize_key(key)
         if field is None:
             continue
 
-        # Dispatch
         if field == "type":
-            if result["type"] is None:  # first match wins
+            if result["type"] is None:
                 raw_t, norm_t = parse_type(value)
                 result["type"] = raw_t
                 result["normalized_type"] = norm_t
@@ -224,11 +243,17 @@ def parse_comment(body: str) -> dict:
             if result["premium_processing"] is None:
                 result["premium_processing"] = parse_bool(value)
 
-        elif field in (
-            "date_applied", "rfie_date", "biometrics_requested_date",
-            "biometrics_completed_date", "date_approved",
-            "date_card_produced", "date_card_shipped", "date_card_received",
-        ):
+        elif field == "biometrics_completed_date":
+            # May include location after the date, e.g. "3/2/2026 - ASC Boston"
+            if result["biometrics_completed_date"] is None:
+                result["biometrics_completed_date"] = parse_date(value)
+                m = _LOC_DATE_RE.search(value)
+                if m:
+                    suffix = value[m.end():].strip(" -|,")
+                    if suffix and suffix.lower() not in NULL_VALUES:
+                        result["biometrics_location"] = suffix
+
+        elif field in _DATE_FIELDS:
             if result[field] is None:
                 result[field] = parse_date(value)
 
@@ -242,19 +267,8 @@ def parse_comment(body: str) -> dict:
         elif field == "country_of_citizenship":
             if result["country_of_citizenship"] is None:
                 v = value.strip()
-                if v.lower() not in NULL_VALUES and v:
+                if v and v.lower() not in NULL_VALUES:
                     result["country_of_citizenship"] = v
-
-        elif field == "biometrics_completed_date":
-            # May include location after the date, e.g. "3/2/2026 - ASC Boston"
-            if result["biometrics_completed_date"] is None:
-                result["biometrics_completed_date"] = parse_date(value)
-                # Extract location suffix
-                date_pat = re.search(r"\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}", value)
-                if date_pat:
-                    suffix = value[date_pat.end():].strip(" -|,")
-                    if suffix:
-                        result["biometrics_location"] = suffix
 
     return result
 
@@ -280,6 +294,6 @@ def compute_derived(record: dict) -> dict:
 
 
 def has_template_data(parsed: dict) -> bool:
-    """Return True if the parsed result looks like a template response."""
-    key_fields = ("date_applied", "type", "date_approved", "biometrics_completed_date")
+    """Return True if the parsed result has at least one usable timeline date."""
+    key_fields = ("date_applied", "date_approved", "biometrics_completed_date")
     return any(parsed.get(f) for f in key_fields)

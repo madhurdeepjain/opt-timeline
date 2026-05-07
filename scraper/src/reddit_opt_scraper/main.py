@@ -15,7 +15,7 @@ from rich.table import Table
 from .config import THREADS, DEFAULT_OUTPUT, REQUEST_DELAY
 from .fetcher import fetch_all_comments
 from .parser import parse_comment, compute_derived, has_template_data
-from .exporter import load_existing, merge, save
+from .exporter import dedupe_by_author_date, load_existing, merge, save
 
 console = Console()
 
@@ -45,13 +45,21 @@ def _build_record(comment: dict, thread: dict) -> dict | None:
         "subreddit": thread["subreddit"],
         "permalink": f"https://reddit.com{comment.get('permalink', '')}",
         **parsed,
-        # Truncate raw text to keep CSV manageable
-        "raw_text": body[:600].replace("\n", " "),
+        "raw_text": body,
     }
+    # Null out dates that are logically impossible (year typos)
+    date_applied = record.get("date_applied")
+    if date_applied:
+        for field in ("biometrics_completed_date", "biometrics_requested_date", "rfie_date"):
+            if record.get(field) and record[field] < date_applied:
+                record[field] = None
+        for field in ("date_approved", "date_card_produced", "date_card_shipped", "date_card_received"):
+            if record.get(field) and record[field] < date_applied:
+                record[field] = None
+
     record = compute_derived(record)
 
     # Drop records where date_applied is in the future — likely a typo
-    date_applied = record.get("date_applied")
     if date_applied and date_applied > date.today().isoformat():
         return None
 
@@ -120,11 +128,13 @@ def cli(output: str, no_merge: bool, verbose: bool) -> None:
     tbl.add_row("Fresh records parsed", str(len(all_fresh)))
     tbl.add_row("Existing records", str(len(existing)))
     merged = merge(existing, all_fresh)
-    tbl.add_row("Total after merge", str(len(merged)))
+    tbl.add_row("After merge", str(len(merged)))
+    final = dedupe_by_author_date(merged)
+    tbl.add_row("After dedupe (author+date_applied)", str(len(final)))
     console.print(tbl)
 
-    save(merged, out_path)
-    console.print(f"\n[bold green]✓ Saved {len(merged)} records → {out_path}[/bold green]")
+    save(final, out_path)
+    console.print(f"\n[bold green]✓ Saved {len(final)} records → {out_path}[/bold green]")
 
     meta_path = out_path.with_name("meta.json")
     meta_path.write_text(
