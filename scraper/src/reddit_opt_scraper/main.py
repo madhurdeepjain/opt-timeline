@@ -12,7 +12,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
-from .config import THREADS, DEFAULT_OUTPUT
+from .config import THREADS, DEFAULT_OUTPUT, REQUEST_DELAY
 from .fetcher import fetch_all_comments
 from .parser import parse_comment, compute_derived, has_template_data
 from .exporter import load_existing, merge, save
@@ -80,8 +80,8 @@ def cli(output: str, no_merge: bool, verbose: bool) -> None:
             sub = thread["subreddit"]
             post_id = thread["post_id"]
             if i > 0:
-                console.print(f"[dim]Waiting 30 s before next thread…[/dim]")
-                time.sleep(30)
+                console.print(f"[dim]Waiting {REQUEST_DELAY:.0f}s before next thread…[/dim]")
+                time.sleep(REQUEST_DELAY)
             console.print(f"\n[bold]Fetching r/{sub} ({post_id})…[/bold]")
             seen = parsed = 0
 

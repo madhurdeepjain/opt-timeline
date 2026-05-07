@@ -64,4 +64,4 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
 )
-REQUEST_DELAY = 1.5  # seconds between requests — stay well under Reddit's rate limit
+REQUEST_DELAY = 3.0  # seconds between requests — Reddit's unauthenticated limit is ~10 req/min
