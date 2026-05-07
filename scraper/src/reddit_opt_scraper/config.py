@@ -53,6 +53,7 @@ CSV_FIELDS = [
     "date_card_shipped",
     "date_card_received",
     "country_of_citizenship",
+    "ban_status",
     "days_to_approval",
     "days_to_card",
     "raw_text",

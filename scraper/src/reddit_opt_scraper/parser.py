@@ -97,6 +97,118 @@ def parse_type(value: str) -> tuple[str, str]:
     return raw, "OPT"
 
 
+# ── Citizenship normalization ────────────────────────────────────────────────
+# Posters often write ban-list status (e.g. "one of the 75 countries") in place
+# of an actual nationality. We split that signal into a separate ban_status
+# field so the citizenship column stays clean.
+
+_KNOWN_COUNTRIES = (
+    "India", "Nepal", "Canada", "Brazil", "Ghana", "South Korea", "Vietnam",
+    "China", "Colombia", "Indonesia", "Pakistan", "Singapore", "Bangladesh",
+    "Cameroon", "Egypt", "Germany", "Luxembourg", "Mexico", "Myanmar",
+    "New Zealand", "Senegal", "Turkey", "United Kingdom", "United States",
+    "Philippines", "Thailand", "Japan", "Taiwan", "Hong Kong", "Malaysia",
+    "Sri Lanka", "Iran", "Nigeria", "Kenya", "France", "Italy", "Spain",
+    "Russia", "Ukraine", "Argentina", "Chile", "Peru", "Venezuela",
+    "Saudi Arabia", "United Arab Emirates", "Israel", "Australia",
+)
+
+_DEMONYMS = {
+    "indian": "India",
+    "brazilian": "Brazil",
+    "nepali": "Nepal",
+    "nepalese": "Nepal",
+    "np": "Nepal",
+    "uk": "United Kingdom",
+    "u.k.": "United Kingdom",
+    "us": "United States",
+    "u.s.": "United States",
+    "u.s.a.": "United States",
+    "usa": "United States",
+    "korean": "South Korea",
+    "korea": "South Korea",
+    "chinese": "China",
+    "vietnamese": "Vietnam",
+    "japanese": "Japan",
+    "filipino": "Philippines",
+    "filipina": "Philippines",
+    "pakistani": "Pakistan",
+    "bangladeshi": "Bangladesh",
+    "german": "Germany",
+    "french": "France",
+    "italian": "Italy",
+    "mexican": "Mexico",
+    "canadian": "Canada",
+}
+
+_RESTRICTED_PHRASES = (
+    "75 ban", "75 countries", "75 country", "among 75", "one of the 75",
+    "one of 75", "partial ban", "east asia country", "restricted country",
+)
+_NON_RESTRICTED_PHRASES = (
+    "non-restricted", "non restricted", "none of any banned",
+    "none of the banned", "not banned", "unbanned",
+)
+
+# Countries on the June 2025 presidential proclamation (full ban + partial
+# restriction) that r/f1visa posters refer to as "the 75 countries". Edit this
+# set as the policy list evolves.
+_RESTRICTED_COUNTRIES = frozenset({
+    # Full ban
+    "Afghanistan", "Myanmar", "Chad", "Republic of the Congo",
+    "Equatorial Guinea", "Eritrea", "Haiti", "Iran", "Libya", "Somalia",
+    "Sudan", "Yemen",
+    # Partial restriction
+    "Burundi", "Cuba", "Laos", "Sierra Leone", "Togo", "Turkmenistan",
+    "Venezuela",
+})
+
+_CITZ_NOISE_CUTS = (
+    "//", ";", "service center", "silent api", "start date", " / ",
+)
+
+
+def _normalize_citizenship(raw: str) -> tuple[Optional[str], Optional[str]]:
+    """Return (country, ban_status). ban_status ∈ {'restricted','non_restricted',None}."""
+    if not raw:
+        return None, None
+    v = raw.strip().lower()
+    v = re.sub(r"^[\\/\-\s.|]+", "", v)
+    for cut in _CITZ_NOISE_CUTS:
+        idx = v.find(cut)
+        if idx != -1:
+            v = v[:idx]
+    v = v.strip(" -,.;:|")
+    if not v or v in NULL_VALUES:
+        return None, None
+
+    if any(p in v for p in _NON_RESTRICTED_PHRASES):
+        return None, "non_restricted"
+    has_restricted = any(p in v for p in _RESTRICTED_PHRASES)
+
+    def _ban_for(country: str) -> str:
+        if has_restricted or country in _RESTRICTED_COUNTRIES:
+            return "restricted"
+        return "non_restricted"
+
+    if v in _DEMONYMS:
+        c = _DEMONYMS[v]
+        return c, _ban_for(c)
+    for c in _KNOWN_COUNTRIES:
+        if c.lower() == v:
+            return c, _ban_for(c)
+    for c in _KNOWN_COUNTRIES:
+        if re.search(r"\b" + re.escape(c.lower()) + r"\b", v):
+            return c, _ban_for(c)
+    for d, c in _DEMONYMS.items():
+        if re.search(r"\b" + re.escape(d) + r"\b", v):
+            return c, _ban_for(c)
+
+    if has_restricted:
+        return None, "restricted"
+    return None, None
+
+
 # ── Markdown / HTML cleanup ───────────────────────────────────────────────────
 _MD_BOLD = re.compile(r"\*{1,3}(.*?)\*{1,3}", re.DOTALL)
 _MD_ITALIC = re.compile(r"_{1,2}(.*?)_{1,2}", re.DOTALL)
@@ -213,6 +325,7 @@ def parse_comment(body: str) -> dict:
         "date_card_shipped": None,
         "date_card_received": None,
         "country_of_citizenship": None,
+        "ban_status": None,
     }
 
     if not body:
@@ -265,10 +378,12 @@ def parse_comment(body: str) -> dict:
                     result["noid_date"] = parse_date(value)
 
         elif field == "country_of_citizenship":
-            if result["country_of_citizenship"] is None:
-                v = value.strip()
-                if v and v.lower() not in NULL_VALUES:
-                    result["country_of_citizenship"] = v
+            if result["country_of_citizenship"] is None and result["ban_status"] is None:
+                country, ban = _normalize_citizenship(value)
+                if country:
+                    result["country_of_citizenship"] = country
+                if ban:
+                    result["ban_status"] = ban
 
     return result
 

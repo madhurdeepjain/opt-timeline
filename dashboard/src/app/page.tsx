@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import Papa from 'papaparse'
 import type { TimelineRecord, FilterState } from '@/lib/types'
+import { CITIZENSHIP_UNSPECIFIED, DEFAULT_FILTERS } from '@/lib/types'
 import { applyFilters, computeStats, buildHistogramData, buildMonthlyTrendData } from '@/lib/data'
 import { formatDate } from '@/lib/utils'
 
@@ -55,6 +56,7 @@ function mapRow(row: Record<string, string>): TimelineRecord {
     date_card_shipped: parseStr(row.date_card_shipped),
     date_card_received: parseStr(row.date_card_received),
     country_of_citizenship: parseStr(row.country_of_citizenship),
+    ban_status: (row.ban_status === 'restricted' || row.ban_status === 'non_restricted') ? row.ban_status : null,
     days_to_approval: parseNum(row.days_to_approval),
     days_to_card: parseNum(row.days_to_card),
     raw_text: row.raw_text ?? '',
@@ -66,7 +68,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(null)
-  const [filters, setFilters] = useState<FilterState>({ type: 'all', premium: 'all', approved: 'all', cardReceived: 'all', rfie: 'all', citizenship: [], threads: ['1r6p9k0', '1qz1n7j'], appliedDateFrom: null, appliedDateTo: null })
+  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
 
   useEffect(() => {
     const base = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
@@ -107,9 +109,81 @@ export default function Home() {
       })
   }, [])
 
-  const citizenshipOptions = useMemo(() =>
-    [...new Set(records.map((r) => r.country_of_citizenship).filter((c): c is string => !!c))].sort()
-  , [records])
+  // Facet counts: each dimension's counts are computed against records that
+  // pass all *other* active filters (the dimension itself is neutralized so
+  // its own selection doesn't zero out the alternatives).
+
+  const pillCounts = useMemo(() => {
+    const baseType = applyFilters(records, { ...filters, type: 'all' })
+    const basePremium = applyFilters(records, { ...filters, premium: 'all' })
+    const baseApproved = applyFilters(records, { ...filters, approved: 'all' })
+    let opt = 0, stem = 0, typeUnk = 0
+    for (const r of baseType) {
+      if (r.normalized_type === 'OPT') opt++
+      else if (r.normalized_type === 'STEM') stem++
+      else typeUnk++
+    }
+    let std = 0, prem = 0, premUnk = 0
+    for (const r of basePremium) {
+      if (r.premium_processing === false) std++
+      else if (r.premium_processing === true) prem++
+      else premUnk++
+    }
+    let approvedYes = 0
+    for (const r of baseApproved) if (r.date_approved) approvedYes++
+    return {
+      type: { OPT: opt, STEM: stem, unknown: typeUnk },
+      premium: { standard: std, premium: prem, unknown: premUnk },
+      approved: { yes: approvedYes, no: baseApproved.length - approvedYes, unknown: 0 },
+    }
+  }, [records, filters])
+
+  const cardStatusCounts = useMemo(() => {
+    const base = applyFilters(records, { ...filters, cardStatus: [] })
+    const c = { none: 0, produced: 0, received: 0 }
+    for (const r of base) {
+      if (r.date_card_received) c.received++
+      else if (r.date_card_produced) c.produced++
+      else c.none++
+    }
+    return c
+  }, [records, filters])
+
+  const ternaryCounts = useMemo(() => {
+    const base = applyFilters(records, { ...filters, rfie: 'all' })
+    let rfieYes = 0
+    for (const r of base) if (r.rfie_date) rfieYes++
+    return { rfie: { yes: rfieYes, no: base.length - rfieYes } }
+  }, [records, filters])
+
+  const banStatusCounts = useMemo(() => {
+    const base = applyFilters(records, { ...filters, banStatus: [] })
+    const c = { restricted: 0, non_restricted: 0, unknown: 0 }
+    for (const r of base) {
+      if (r.ban_status === 'restricted') c.restricted++
+      else if (r.ban_status === 'non_restricted') c.non_restricted++
+      else c.unknown++
+    }
+    return c
+  }, [records, filters])
+
+  const citizenshipOptions = useMemo(() => {
+    const base = applyFilters(records, { ...filters, citizenship: [] })
+    const counts = new Map<string, number>()
+    let unspecified = 0
+    for (const r of base) {
+      if (r.country_of_citizenship) counts.set(r.country_of_citizenship, (counts.get(r.country_of_citizenship) ?? 0) + 1)
+      else unspecified++
+    }
+    // Keep currently-selected options visible at count=0 so users can still toggle them off
+    for (const sel of filters.citizenship) {
+      if (sel !== CITIZENSHIP_UNSPECIFIED && !counts.has(sel)) counts.set(sel, 0)
+    }
+    const entries = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([country, count]) => ({ country, count }))
+    return { entries, unspecified }
+  }, [records, filters])
 
   const appliedDateBounds = useMemo(() => {
     const dates = records.map((r) => r.date_applied).filter((d): d is string => !!d).sort()
@@ -117,16 +191,35 @@ export default function Home() {
   }, [records])
 
   const appliedDateDistribution = useMemo(() => {
-    const counts: Record<string, number> = {}
+    // Bar height = full-dataset count per month (stable across filter changes).
+    // inScope = count after applying all other filters (drives the in-scope tint).
+    const total: Record<string, number> = {}
     for (const r of records) {
       if (!r.date_applied) continue
       const ym = r.date_applied.slice(0, 7)
-      counts[ym] = (counts[ym] ?? 0) + 1
+      total[ym] = (total[ym] ?? 0) + 1
     }
-    return Object.entries(counts)
+    const base = applyFilters(records, { ...filters, appliedDateFrom: null, appliedDateTo: null })
+    const inScope: Record<string, number> = {}
+    for (const r of base) {
+      if (!r.date_applied) continue
+      const ym = r.date_applied.slice(0, 7)
+      inScope[ym] = (inScope[ym] ?? 0) + 1
+    }
+    return Object.entries(total)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, count]) => ({ month, count }))
-  }, [records])
+      .map(([month, count]) => ({ month, count, inScope: inScope[month] ?? 0 }))
+  }, [records, filters])
+
+  const threadCounts = useMemo(() => {
+    const base = applyFilters(records, { ...filters, threads: [] })
+    const counts: Record<string, number> = {}
+    for (const r of base) {
+      const id = r.permalink.split('/comments/')[1]?.split('/')[0] ?? ''
+      if (id) counts[id] = (counts[id] ?? 0) + 1
+    }
+    return counts
+  }, [records, filters])
 
   const filtered = useMemo(() => applyFilters(records, filters), [records, filters])
   const stats = useMemo(() => computeStats(filtered), [filtered])
@@ -195,7 +288,7 @@ export default function Home() {
 
             {/* Filters */}
             <section>
-              <Filters filters={filters} onChange={setFilters} total={filtered.length} citizenshipOptions={citizenshipOptions} appliedDateBounds={appliedDateBounds} appliedDateDistribution={appliedDateDistribution} />
+              <Filters filters={filters} onChange={setFilters} total={filtered.length} citizenshipOptions={citizenshipOptions} banStatusCounts={banStatusCounts} cardStatusCounts={cardStatusCounts} ternaryCounts={ternaryCounts} pillCounts={pillCounts} threadCounts={threadCounts} appliedDateBounds={appliedDateBounds} appliedDateDistribution={appliedDateDistribution} />
             </section>
 
             {/* Stats */}

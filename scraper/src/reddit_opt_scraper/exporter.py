@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import Path
 
 from .config import CSV_FIELDS
-from .parser import compute_derived, has_template_data, parse_comment
+from .parser import _normalize_citizenship, compute_derived, has_template_data, parse_comment
 
 # Fields that must be >= date_applied or are nulled out as typos.
 _AFTER_APPLIED_FIELDS = (
@@ -51,6 +51,14 @@ def _rehabilitate(row: dict) -> dict | None:
     # Coerce booleans back from the CSV strings
     for k in ("premium_processing", "noid"):
         r[k] = _coerce_bool(r.get(k))
+    # Re-normalize citizenship (cleans casing, demonyms, ban-list phrases).
+    # Always re-derive ban_status from the (possibly updated) country list.
+    citz = r.get("country_of_citizenship")
+    if citz:
+        country, ban = _normalize_citizenship(citz)
+        r["country_of_citizenship"] = country
+        if ban:
+            r["ban_status"] = ban
     # Drop future-dated date_applied
     da = r.get("date_applied") or None
     if da and da > date.today().isoformat():

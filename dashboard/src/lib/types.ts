@@ -19,6 +19,7 @@ export interface TimelineRecord {
   date_card_shipped: string | null
   date_card_received: string | null
   country_of_citizenship: string | null
+  ban_status: 'restricted' | 'non_restricted' | null
   days_to_approval: number | null
   days_to_card: number | null
   raw_text: string
@@ -39,16 +40,37 @@ export const THREAD_OPTIONS: ThreadOption[] = [
   { id: '1of7n45', label: 'Fall 2025',           subreddit: 'f1visa', url: 'https://reddit.com/r/f1visa/comments/1of7n45/' },
 ]
 
+// Sentinel value used inside the citizenship[] array to select rows whose
+// country_of_citizenship is null. Combined with real country names so users can
+// pick "India" + "Unspecified" together.
+export const CITIZENSHIP_UNSPECIFIED = '__unspecified__'
+
 export interface FilterState {
-  type: 'all' | 'OPT' | 'STEM'
-  premium: 'all' | 'standard' | 'premium'
-  approved: 'all' | 'yes' | 'no'
-  cardReceived: 'all' | 'yes' | 'no'
+  type: 'all' | 'OPT' | 'STEM' | 'unknown'
+  premium: 'all' | 'standard' | 'premium' | 'unknown'
+  approved: 'all' | 'yes' | 'no' | 'unknown'
+  cardStatus: ('none' | 'produced' | 'received')[]
   rfie: 'all' | 'yes' | 'no'
+  banStatus: ('restricted' | 'non_restricted' | 'unknown')[]
   citizenship: string[]
   threads: string[]
   appliedDateFrom: string | null
   appliedDateTo: string | null
+}
+
+export const DEFAULT_THREADS = ['1r6p9k0', '1qz1n7j']
+
+export const DEFAULT_FILTERS: FilterState = {
+  type: 'all',
+  premium: 'all',
+  approved: 'all',
+  cardStatus: [],
+  rfie: 'all',
+  banStatus: [],
+  citizenship: [],
+  threads: DEFAULT_THREADS,
+  appliedDateFrom: null,
+  appliedDateTo: null,
 }
 
 export interface SurvivalPoint {
