@@ -75,16 +75,16 @@ export default function MilestoneBreakdown({ records }: { records: TimelineRecor
             width={165}
           />
           <Tooltip
-            contentStyle={{
-              backgroundColor: 'var(--surface-card)',
-              border: '1px solid var(--hairline)',
-              borderRadius: '6px',
-              fontSize: '12px',
-              color: 'var(--ink)',
-            }}
-            formatter={(val, _key, item) => {
-              const p = item.payload as MilestonePoint
-              return [`${val}d median · ${p.p25}–${p.p75}d range · n=${p.n}`, '']
+            content={({ active, payload }) => {
+              if (!active || !payload?.[0]) return null
+              const p = payload[0].payload as MilestonePoint
+              if (!p.median) return null
+              return (
+                <div style={{ backgroundColor: 'var(--surface-card)', border: '1px solid var(--hairline)', borderRadius: '6px', fontSize: '12px', padding: '8px 12px' }}>
+                  <div style={{ fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{p.stage}</div>
+                  <div style={{ color: 'var(--mute)' }}>{p.median}d median · {p.p25}–{p.p75}d range · n={p.n}</div>
+                </div>
+              )
             }}
           />
           <Bar dataKey="median" radius={[0, 3, 3, 0]} barSize={16}>
