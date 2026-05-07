@@ -260,7 +260,7 @@ export default function WhereAreYouCard({ records }: { records: TimelineRecord[]
             </AreaChart>
           </ResponsiveContainer>
           <p className="text-[11px]" style={{ color: 'var(--mute)' }}>
-            Dashed lines mark when 50%, 75%, and 90% of cases had their approval. Based on {approvedCount} approved records from 2026 threads.
+            Dashed lines mark when 50%, 75%, and 90% of cases had their approval. Based on {approvedCount} records with a known wait time from 2026 threads.
           </p>
         </>
       ) : (
