@@ -89,6 +89,9 @@ interface TrendDatum {
 export function MonthlyTrendChart({ data }: { data: TrendDatum[] }) {
   const formatted = data.map((d) => ({ ...d, month: formatYearMonth(d.ym) }))
 
+  const hasOPT = data.some((d) => d.OPT > 0)
+  const hasSTEM = data.some((d) => d.STEM > 0)
+
   return (
     <ChartCard title="Monthly Submissions" sub="Application Trend">
       <ResponsiveContainer width="100%" height={220}>
@@ -119,22 +122,26 @@ export function MonthlyTrendChart({ data }: { data: TrendDatum[] }) {
           <Legend
             wrapperStyle={{ fontSize: '12px', color: 'var(--mute)', paddingTop: '8px' }}
           />
-          <Line
-            type="monotone"
-            dataKey="OPT"
-            stroke={OPT_COLOR}
-            strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 4 }}
-          />
-          <Line
-            type="monotone"
-            dataKey="STEM"
-            stroke={STEM_COLOR}
-            strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 4 }}
-          />
+          {hasOPT && (
+            <Line
+              type="monotone"
+              dataKey="OPT"
+              stroke={OPT_COLOR}
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 4 }}
+            />
+          )}
+          {hasSTEM && (
+            <Line
+              type="monotone"
+              dataKey="STEM"
+              stroke={STEM_COLOR}
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 4 }}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
     </ChartCard>

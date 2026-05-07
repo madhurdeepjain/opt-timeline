@@ -49,7 +49,7 @@ export default function StageFunnel({ records }: { records: TimelineRecord[] }) 
           />
           <Bar dataKey="pct" radius={[0, 3, 3, 0]} barSize={18}>
             {data.map((entry, i) => (
-              <Cell key={i} fill={i === 0 ? 'var(--ink)' : i <= 2 ? '#9b9c92' : '#f7a501'} />
+              <Cell key={i} fill={['#f0b429', '#e07820', '#b8cf5a', '#4da35e', '#2e7d46'][i] ?? '#4da35e'} />
             ))}
             <LabelList
               content={(props) => {
