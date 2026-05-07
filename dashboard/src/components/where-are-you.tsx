@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceDot,
   LineChart, Line, CartesianGrid, Legend,
@@ -10,6 +10,13 @@ import { buildSurvivalCurve } from '@/lib/data'
 import { daysBetween } from '@/lib/utils'
 
 const TODAY = new Date().toISOString().slice(0, 10)
+
+const PREFS_KEY = 'way-prefs'
+
+function loadPrefs(): { tab?: string; appliedDate?: string; typeFilter?: string | null; premiumFilter?: string | null } {
+  if (typeof window === 'undefined') return {}
+  try { return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') } catch { return {} }
+}
 
 const THREAD_2026 = new Set(['1r6p9k0', '1qz1n7j'])
 
@@ -44,10 +51,15 @@ function Pill({ active, onClick, children }: { active: boolean; onClick: () => v
 }
 
 export default function WhereAreYouCard({ records }: { records: TimelineRecord[] }) {
-  const [tab, setTab] = useState<'position' | 'curve'>('position')
-  const [appliedDate, setAppliedDate] = useState('')
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>(null)
-  const [premiumFilter, setPremiumFilter] = useState<PremiumFilter>(null)
+  const [tab, setTab] = useState<'position' | 'curve'>(() => (loadPrefs().tab as 'position' | 'curve') ?? 'position')
+  const [appliedDate, setAppliedDate] = useState<string>(() => loadPrefs().appliedDate ?? '')
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>(() => (loadPrefs().typeFilter as TypeFilter) ?? null)
+  const [premiumFilter, setPremiumFilter] = useState<PremiumFilter>(() => (loadPrefs().premiumFilter as PremiumFilter) ?? null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ tab, appliedDate, typeFilter, premiumFilter }))
+  }, [tab, appliedDate, typeFilter, premiumFilter])
 
   // Always scoped to 2026 threads only
   const base2026 = useMemo(
