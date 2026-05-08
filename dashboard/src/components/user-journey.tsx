@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Check, ChevronLeft, Pencil } from 'lucide-react'
 import { formatShortDate, daysBetween } from '@/lib/utils'
+import confetti from 'canvas-confetti'
 
 export const JOURNEY_KEY = 'my-journey'
 const WAY_PREFS_KEY = 'way-prefs'
@@ -354,6 +355,9 @@ export default function UserJourney() {
     saveJourney(data)
     setJourney(data)
     setEditing(false)
+    if (data.date_card_received) {
+      confetti({ particleCount: 160, spread: 80, origin: { y: 0.5 } })
+    }
   }
 
   function handleClear() {
