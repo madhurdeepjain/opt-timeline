@@ -69,7 +69,42 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(null)
-  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
+  const [filters, setFilters] = useState<FilterState>(() => {
+    if (typeof window === 'undefined') return DEFAULT_FILTERS
+    try {
+      const prefs = JSON.parse(localStorage.getItem('way-prefs') ?? '{}')
+      const type: FilterState['type'] = prefs.typeFilter === 'OPT' ? 'OPT' : prefs.typeFilter === 'STEM' ? 'STEM' : 'all'
+      const premium: FilterState['premium'] = prefs.premiumFilter === 'premium' ? 'premium' : prefs.premiumFilter === 'standard' ? 'standard' : 'all'
+      return { ...DEFAULT_FILTERS, type, premium }
+    } catch { return DEFAULT_FILTERS }
+  })
+
+  useEffect(() => {
+    function handleSync(e: Event) {
+      const { typeFilter, premiumFilter, source } = (e as CustomEvent).detail
+      if (source === 'page') return
+      setFilters(prev => ({
+        ...prev,
+        type: typeFilter === 'OPT' ? 'OPT' : typeFilter === 'STEM' ? 'STEM' : 'all',
+        premium: premiumFilter === 'premium' ? 'premium' : premiumFilter === 'standard' ? 'standard' : 'all',
+      }))
+    }
+    window.addEventListener('opt-filters-sync', handleSync)
+    return () => window.removeEventListener('opt-filters-sync', handleSync)
+  }, [])
+
+  function handleFiltersChange(newFilters: FilterState) {
+    setFilters(newFilters)
+    if (newFilters.type !== filters.type || newFilters.premium !== filters.premium) {
+      const typeFilter = (newFilters.type === 'OPT' || newFilters.type === 'STEM') ? newFilters.type : null
+      const premiumFilter = (newFilters.premium === 'premium' || newFilters.premium === 'standard') ? newFilters.premium : null
+      try {
+        const prefs = JSON.parse(localStorage.getItem('way-prefs') ?? '{}')
+        localStorage.setItem('way-prefs', JSON.stringify({ ...prefs, typeFilter, premiumFilter }))
+      } catch {}
+      window.dispatchEvent(new CustomEvent('opt-filters-sync', { detail: { typeFilter, premiumFilter, source: 'page' } }))
+    }
+  }
 
   useEffect(() => {
     const base = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
@@ -294,7 +329,7 @@ export default function Home() {
 
             {/* Filters */}
             <section>
-              <Filters filters={filters} onChange={setFilters} total={filtered.length} citizenshipOptions={citizenshipOptions} banStatusCounts={banStatusCounts} cardStatusCounts={cardStatusCounts} ternaryCounts={ternaryCounts} pillCounts={pillCounts} threadCounts={threadCounts} appliedDateBounds={appliedDateBounds} appliedDateDistribution={appliedDateDistribution} />
+              <Filters filters={filters} onChange={handleFiltersChange} total={filtered.length} citizenshipOptions={citizenshipOptions} banStatusCounts={banStatusCounts} cardStatusCounts={cardStatusCounts} ternaryCounts={ternaryCounts} pillCounts={pillCounts} threadCounts={threadCounts} appliedDateBounds={appliedDateBounds} appliedDateDistribution={appliedDateDistribution} />
             </section>
 
             {/* Stats */}
