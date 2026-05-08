@@ -31,37 +31,24 @@ const EMPTY: JourneyData = {
   date_card_received: null,
 }
 
-export function loadJourney(): JourneyData | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = localStorage.getItem(JOURNEY_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as JourneyData
-    // Pre-populate from way-prefs if journey fields are missing
-    const prefs = JSON.parse(localStorage.getItem(WAY_PREFS_KEY) ?? '{}')
-    return {
-      ...parsed,
-      type: parsed.type ?? (prefs.typeFilter as JourneyData['type']) ?? null,
-      premium: parsed.premium ?? (prefs.premiumFilter === 'premium' ? true : prefs.premiumFilter === 'standard' ? false : null),
-      date_applied: parsed.date_applied ?? prefs.appliedDate ?? null,
-    }
-  } catch { return null }
-}
-
 function loadInitialJourney(): JourneyData | null {
   if (typeof window === 'undefined') return null
   try {
     const raw = localStorage.getItem(JOURNEY_KEY)
-    if (raw) return JSON.parse(raw) as JourneyData
-    // No journey yet — seed from way-prefs if available
-    const prefs = JSON.parse(localStorage.getItem(WAY_PREFS_KEY) ?? '{}')
-    const seeded: Partial<JourneyData> = {}
-    if (prefs.typeFilter) seeded.type = prefs.typeFilter as JourneyData['type']
-    if (prefs.premiumFilter) seeded.premium = prefs.premiumFilter === 'premium'
-    if (prefs.appliedDate) seeded.date_applied = prefs.appliedDate
-    if (Object.keys(seeded).length > 0) return { ...EMPTY, ...seeded }
-    return null
+    if (!raw) return null
+    return JSON.parse(raw) as JourneyData
   } catch { return null }
+}
+
+function loadWayPrefsDefaults(): Partial<JourneyData> {
+  try {
+    const prefs = JSON.parse(localStorage.getItem(WAY_PREFS_KEY) ?? '{}')
+    const defaults: Partial<JourneyData> = {}
+    if (prefs.typeFilter) defaults.type = prefs.typeFilter as JourneyData['type']
+    if (prefs.premiumFilter) defaults.premium = prefs.premiumFilter === 'premium'
+    if (prefs.appliedDate) defaults.date_applied = prefs.appliedDate
+    return defaults
+  } catch { return {} }
 }
 
 function syncPrefs(data: JourneyData) {
@@ -342,6 +329,8 @@ function Wizard({
 
 export default function UserJourney() {
   const [journey, setJourney] = useState<JourneyData | null | undefined>(undefined)
+  const [wayPrefsDefaults, setWayPrefsDefaults] = useState<Partial<JourneyData>>({})
+  const [started, setStarted] = useState(false)
   const [editing, setEditing] = useState(false)
   const [wizardKey, setWizardKey] = useState(0)
 
@@ -360,6 +349,12 @@ export default function UserJourney() {
     }
   }
 
+  function handleStart() {
+    setWayPrefsDefaults(loadWayPrefsDefaults())
+    setStarted(true)
+    setWizardKey(k => k + 1)
+  }
+
   function handleClear() {
     localStorage.removeItem(JOURNEY_KEY)
     // Clear the shared fields from way-prefs so the queue widget resets too
@@ -375,6 +370,7 @@ export default function UserJourney() {
     window.dispatchEvent(new CustomEvent('journey-updated', { detail: EMPTY }))
     setJourney(null)
     setEditing(false)
+    setStarted(false)
     setWizardKey(k => k + 1)
   }
 
@@ -383,7 +379,6 @@ export default function UserJourney() {
   }
 
   const events = journey ? buildEvents(journey) : []
-  const showWizard = journey === null || editing
   const resumeIndex = journey && editing ? getResumeIndex(journey) : 0
 
   const isComplete = !!journey?.date_card_received
@@ -405,12 +400,34 @@ export default function UserJourney() {
     return (new Date(dateStr + 'T12:00:00Z').getTime() - startMs) / totalMs
   }
 
+  const showInvitation = journey === null && !started
+  const showWizard = journey === null ? started : editing
+
   return (
     <div
       className="rounded-md border p-6"
       style={{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--hairline)' }}
     >
-      {showWizard ? (
+      {showInvitation ? (
+        <>
+          <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--mute)' }}>
+            Your Journey
+          </p>
+          <h2 className="text-lg font-bold mb-2" style={{ color: 'var(--ink)' }}>
+            Track your OPT journey
+          </h2>
+          <p className="text-sm mb-6" style={{ color: 'var(--mute)' }}>
+            Record your milestones — application, biometrics, approval, and card delivery. Stored only in your browser.
+          </p>
+          <button
+            onClick={handleStart}
+            className="px-4 py-2 rounded-full text-sm font-medium cursor-pointer transition-colors"
+            style={{ backgroundColor: 'var(--ink)', color: '#fff' }}
+          >
+            Get started →
+          </button>
+        </>
+      ) : showWizard ? (
         <>
           <div className="mb-6">
             <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--mute)' }}>
@@ -425,7 +442,7 @@ export default function UserJourney() {
           </div>
           <Wizard
             key={wizardKey}
-            initialData={journey ?? EMPTY}
+            initialData={journey ?? { ...EMPTY, ...wayPrefsDefaults }}
             initialStepIndex={resumeIndex}
             onProgress={syncPrefs}
             onComplete={handleComplete}
