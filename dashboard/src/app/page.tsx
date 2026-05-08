@@ -8,6 +8,7 @@ import { applyFilters, computeStats, buildHistogramData, buildMonthlyTrendData }
 import { formatDate } from '@/lib/utils'
 
 import Nav from '@/components/nav'
+import UserJourney from '@/components/user-journey'
 import PersonalTimeline from '@/components/personal-timeline'
 import Filters from '@/components/filters'
 import StatsCards from '@/components/stats-cards'
@@ -281,6 +282,11 @@ export default function Home() {
 
         {!loading && !error && (
           <>
+            {/* User's personal journey tracker */}
+            <section>
+              <UserJourney />
+            </section>
+
             {/* Where Are You — uses own 2026-thread scope, unaffected by global filters */}
             <section>
               <WhereAreYouCard records={records} />

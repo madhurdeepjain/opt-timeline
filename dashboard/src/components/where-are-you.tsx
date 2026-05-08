@@ -12,10 +12,21 @@ import { daysBetween } from '@/lib/utils'
 const TODAY = new Date().toISOString().slice(0, 10)
 
 const PREFS_KEY = 'way-prefs'
+const JOURNEY_KEY = 'my-journey'
 
 function loadPrefs(): { tab?: string; appliedDate?: string; typeFilter?: string | null; premiumFilter?: string | null } {
   if (typeof window === 'undefined') return {}
-  try { return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') } catch { return {} }
+  try {
+    const prefs = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}')
+    // Seed from user journey if way-prefs fields are not set
+    const journey = JSON.parse(localStorage.getItem(JOURNEY_KEY) ?? '{}')
+    return {
+      ...prefs,
+      appliedDate: prefs.appliedDate || journey.date_applied || '',
+      typeFilter: prefs.typeFilter || journey.type || null,
+      premiumFilter: prefs.premiumFilter || (journey.premium === true ? 'premium' : journey.premium === false ? 'standard' : null),
+    }
+  } catch { return {} }
 }
 
 const THREAD_2026 = new Set(['1r6p9k0', '1qz1n7j'])
@@ -60,6 +71,18 @@ export default function WhereAreYouCard({ records }: { records: TimelineRecord[]
     if (typeof window === 'undefined') return
     localStorage.setItem(PREFS_KEY, JSON.stringify({ tab, appliedDate, typeFilter, premiumFilter }))
   }, [tab, appliedDate, typeFilter, premiumFilter])
+
+  // Keep in sync when the user fills the journey wizard above
+  useEffect(() => {
+    function handleJourneyUpdate(e: Event) {
+      const data = (e as CustomEvent).detail as { type?: string | null; premium?: boolean | null; date_applied?: string | null }
+      setAppliedDate(data.date_applied ?? '')
+      setTypeFilter((data.type as TypeFilter) ?? null)
+      setPremiumFilter(data.premium === true ? 'premium' : data.premium === false ? 'standard' : null)
+    }
+    window.addEventListener('journey-updated', handleJourneyUpdate)
+    return () => window.removeEventListener('journey-updated', handleJourneyUpdate)
+  }, [])
 
   // Always scoped to 2026 threads only
   const base2026 = useMemo(
