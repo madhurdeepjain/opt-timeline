@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceDot,
   LineChart, Line, CartesianGrid, Legend,
@@ -66,11 +66,20 @@ export default function WhereAreYouCard({ records }: { records: TimelineRecord[]
   const [appliedDate, setAppliedDate] = useState<string>(() => loadPrefs().appliedDate ?? '')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>(() => (loadPrefs().typeFilter as TypeFilter) ?? null)
   const [premiumFilter, setPremiumFilter] = useState<PremiumFilter>(() => (loadPrefs().premiumFilter as PremiumFilter) ?? null)
+  const mountedRef = useRef(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     localStorage.setItem(PREFS_KEY, JSON.stringify({ tab, appliedDate, typeFilter, premiumFilter }))
   }, [tab, appliedDate, typeFilter, premiumFilter])
+
+  // Broadcast type/premium changes to main filters (skip initial mount)
+  useEffect(() => {
+    if (!mountedRef.current) { mountedRef.current = true; return }
+    window.dispatchEvent(new CustomEvent('opt-filters-sync', {
+      detail: { typeFilter, premiumFilter, source: 'where-are-you' },
+    }))
+  }, [typeFilter, premiumFilter])
 
   // Keep in sync when the user fills the journey wizard above
   useEffect(() => {
@@ -82,6 +91,18 @@ export default function WhereAreYouCard({ records }: { records: TimelineRecord[]
     }
     window.addEventListener('journey-updated', handleJourneyUpdate)
     return () => window.removeEventListener('journey-updated', handleJourneyUpdate)
+  }, [])
+
+  // Keep in sync when main filters change type/premium
+  useEffect(() => {
+    function handleSync(e: Event) {
+      const { typeFilter: tf, premiumFilter: pf, source } = (e as CustomEvent).detail
+      if (source === 'where-are-you') return
+      setTypeFilter(tf ?? null)
+      setPremiumFilter(pf ?? null)
+    }
+    window.addEventListener('opt-filters-sync', handleSync)
+    return () => window.removeEventListener('opt-filters-sync', handleSync)
   }, [])
 
   // Always scoped to 2026 threads only
