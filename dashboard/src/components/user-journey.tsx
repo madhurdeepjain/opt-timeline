@@ -383,14 +383,11 @@ export default function UserJourney() {
   const resumeIndex = journey && editing ? getResumeIndex(journey) : 0
 
   const isComplete = !!journey?.date_card_received
-  const firstDate = events[0]?.date
-  const lastDate = events[events.length - 1]?.date
-  const totalDays =
-    firstDate && lastDate && events.length > 1
-      ? daysBetween(firstDate, lastDate)
-      : journey?.date_applied
-      ? daysBetween(journey.date_applied, TODAY)
-      : null
+  const totalDays = isComplete && journey?.date_applied && journey?.date_card_received
+    ? daysBetween(journey.date_applied, journey.date_card_received)
+    : journey?.date_applied
+    ? daysBetween(journey.date_applied, TODAY)
+    : null
 
   let startMs = 0
   let totalMs = 0
