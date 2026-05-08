@@ -111,6 +111,80 @@ function PillTab({
   )
 }
 
+function PillGroupDropdown<T extends string>({
+  value,
+  allLabel,
+  allKey,
+  options,
+  onChange,
+}: {
+  value: T
+  allLabel: string
+  allKey: T
+  options: { key: T; label: string; count: number }[]
+  onChange: (v: T) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  const active = value !== allKey
+  const currentLabel = active ? (options.find((o) => o.key === value)?.label ?? allLabel) : allLabel
+
+  return (
+    <div ref={ref} className="relative sm:hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors"
+        style={{
+          backgroundColor: active ? 'var(--ink)' : 'var(--surface-soft)',
+          color: active ? '#fff' : 'var(--body)',
+        }}
+      >
+        {currentLabel}
+        {active ? (
+          <span
+            role="button"
+            onClick={(e) => { e.stopPropagation(); onChange(allKey) }}
+            className="flex items-center opacity-70 hover:opacity-100"
+          >
+            <X size={11} />
+          </span>
+        ) : (
+          <ChevronDown size={12} style={{ opacity: 0.5 }} />
+        )}
+      </button>
+
+      {open && (
+        <div
+          className="absolute top-full left-0 mt-1 z-50 rounded-md border shadow-md min-w-44"
+          style={{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--hairline)' }}
+        >
+          {options.map(({ key, label, count }) => (
+            <button
+              key={key}
+              onClick={() => { onChange(value === key ? allKey : key); setOpen(false) }}
+              className="flex items-center justify-between gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-[var(--surface-soft)] w-full text-left"
+              style={{ color: 'var(--ink)', backgroundColor: value === key ? 'var(--surface-soft)' : 'transparent' }}
+            >
+              <span>{label}</span>
+              <span className="text-[11px]" style={{ color: 'var(--mute)' }}>{count}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CitizenshipDropdown({
   selected,
   options,
@@ -988,8 +1062,19 @@ export default function Filters({ filters, onChange, total, citizenshipOptions, 
         onChange={(from, to) => onChange({ ...filters, appliedDateFrom: from, appliedDateTo: to })}
       />
 
+      <PillGroupDropdown<FilterState['type']>
+        value={filters.type}
+        allLabel="All types"
+        allKey="all"
+        options={[
+          { key: 'OPT', label: 'OPT', count: pillCounts.type.OPT },
+          { key: 'STEM', label: 'STEM OPT', count: pillCounts.type.STEM },
+          { key: 'unknown', label: 'Unknown', count: pillCounts.type.unknown },
+        ]}
+        onChange={(type) => onChange({ ...filters, type })}
+      />
       <div
-        className="flex items-center gap-1 rounded-full p-1"
+        className="hidden sm:flex items-center gap-1 rounded-full p-1"
         style={{ backgroundColor: 'var(--surface-soft)' }}
       >
         <PillTab active={filters.type === 'all'} onClick={() => onChange({ ...filters, type: 'all' })}>
@@ -1006,8 +1091,19 @@ export default function Filters({ filters, onChange, total, citizenshipOptions, 
         </PillTab>
       </div>
 
+      <PillGroupDropdown<FilterState['premium']>
+        value={filters.premium}
+        allLabel="All processing"
+        allKey="all"
+        options={[
+          { key: 'standard', label: 'Standard', count: pillCounts.premium.standard },
+          { key: 'premium', label: 'Premium', count: pillCounts.premium.premium },
+          { key: 'unknown', label: 'Unknown', count: pillCounts.premium.unknown },
+        ]}
+        onChange={(premium) => onChange({ ...filters, premium })}
+      />
       <div
-        className="flex items-center gap-1 rounded-full p-1"
+        className="hidden sm:flex items-center gap-1 rounded-full p-1"
         style={{ backgroundColor: 'var(--surface-soft)' }}
       >
         <PillTab active={filters.premium === 'all'} onClick={() => onChange({ ...filters, premium: 'all' })}>
@@ -1024,8 +1120,19 @@ export default function Filters({ filters, onChange, total, citizenshipOptions, 
         </PillTab>
       </div>
 
+      <PillGroupDropdown<FilterState['approved']>
+        value={filters.approved}
+        allLabel="All statuses"
+        allKey="all"
+        options={[
+          { key: 'yes', label: 'Approved', count: pillCounts.approved.yes },
+          { key: 'no', label: 'Pending', count: pillCounts.approved.no },
+          { key: 'unknown', label: 'Unknown', count: pillCounts.approved.unknown },
+        ]}
+        onChange={(approved) => onChange({ ...filters, approved })}
+      />
       <div
-        className="flex items-center gap-1 rounded-full p-1"
+        className="hidden sm:flex items-center gap-1 rounded-full p-1"
         style={{ backgroundColor: 'var(--surface-soft)' }}
       >
         <PillTab active={filters.approved === 'all'} onClick={() => onChange({ ...filters, approved: 'all' })}>
