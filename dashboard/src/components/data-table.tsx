@@ -122,14 +122,24 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
           <thead>
             <tr style={{ borderBottom: '1px solid var(--hairline)' }}>
               <Th col="normalized_type" label="Type" />
-              <Th col="date_applied" label="Applied" />
-              <Th col="days_to_approval" label="Days → Approval" />
-              <Th col="days_to_card" label="Days → Card" />
               <th
                 className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
                 style={{ color: 'var(--mute)' }}
               >
                 Premium
+              </th>
+              <Th col="date_applied" label="Applied" />
+              <th
+                className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
+                style={{ color: 'var(--mute)' }}
+              >
+                Bio Requested
+              </th>
+              <th
+                className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
+                style={{ color: 'var(--mute)' }}
+              >
+                Bio Completed
               </th>
               <th
                 className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
@@ -141,8 +151,16 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
                 className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
                 style={{ color: 'var(--mute)' }}
               >
+                Card Produced
+              </th>
+              <th
+                className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
+                style={{ color: 'var(--mute)' }}
+              >
                 Card Received
               </th>
+              <Th col="days_to_approval" label="Days → Approval" />
+              <Th col="days_to_card" label="Days → Card" />
               <th
                 className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
                 style={{ color: 'var(--mute)' }}
@@ -180,15 +198,6 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
-                  {formatDate(r.date_applied)}
-                </td>
-                <td className="px-4 py-3 text-sm font-medium" style={{ color: 'var(--ink)' }}>
-                  {r.days_to_approval != null ? `${r.days_to_approval}d` : '—'}
-                </td>
-                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
-                  {r.days_to_card != null ? `${r.days_to_card}d` : '—'}
-                </td>
-                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
                   {r.premium_processing === true ? (
                     <span style={{ color: 'var(--primary-pressed)', fontWeight: 600 }}>Yes</span>
                   ) : r.premium_processing === false ? (
@@ -198,10 +207,28 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
                   )}
                 </td>
                 <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                  {formatDate(r.date_applied)}
+                </td>
+                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                  {formatDate(r.biometrics_requested_date)}
+                </td>
+                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                  {formatDate(r.biometrics_completed_date)}
+                </td>
+                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
                   {formatDate(r.date_approved)}
                 </td>
                 <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                  {formatDate(r.date_card_produced)}
+                </td>
+                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
                   {formatDate(r.date_card_received)}
+                </td>
+                <td className="px-4 py-3 text-sm font-medium" style={{ color: 'var(--ink)' }}>
+                  {r.days_to_approval != null ? `${r.days_to_approval}d` : '—'}
+                </td>
+                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                  {r.days_to_card != null ? `${r.days_to_card}d` : '—'}
                 </td>
                 <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
                   {r.country_of_citizenship ?? '—'}
@@ -224,7 +251,7 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
             {pageData.length === 0 && (
               <tr>
                 <td
-                  colSpan={9}
+                  colSpan={12}
                   className="px-4 py-12 text-center text-sm"
                   style={{ color: 'var(--mute)' }}
                 >
