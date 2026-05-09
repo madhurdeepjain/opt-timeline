@@ -28,15 +28,24 @@ export default function Nav({ lastUpdated }: { lastUpdated: string | null }) {
       <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Logo />
-          <span className="text-lg font-bold" style={{ color: 'var(--ink)' }}>
-            OPT Timeline
-          </span>
-          <span
-            className="hidden sm:inline-block text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full"
-            style={{ backgroundColor: 'var(--primary)', color: 'var(--ink)' }}
-          >
-            Community
-          </span>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-bold" style={{ color: 'var(--ink)' }}>
+                OPT Timeline
+              </span>
+              <span
+                className="hidden sm:inline-block text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: 'var(--primary)', color: 'var(--ink)' }}
+              >
+                Community
+              </span>
+            </div>
+            {lastUpdated && (
+              <span className="text-xs sm:hidden leading-none" style={{ color: 'var(--mute)' }}>
+                Updated {lastUpdated}
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-4">
           {lastUpdated && (
