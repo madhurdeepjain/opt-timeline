@@ -46,7 +46,7 @@ function exportCSV(records: TimelineRecord[]) {
 }
 
 function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
-  if (col !== sortKey) return <ChevronUp size={12} style={{ color: 'var(--ash)' }} />
+  if (col !== sortKey) return null
   return sortDir === 'asc' ? (
     <ChevronUp size={12} style={{ color: 'var(--ink)' }} />
   ) : (
