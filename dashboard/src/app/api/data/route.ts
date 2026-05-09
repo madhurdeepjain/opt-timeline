@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 
-export const revalidate = 3600
+export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
@@ -11,7 +11,6 @@ export async function GET() {
     return new NextResponse(csv, {
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
-        'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
       },
     })
   } catch {
