@@ -1206,7 +1206,7 @@ function ClearFiltersButton({ onClear }: { onClear: () => void }) {
         }}
       >
         <RotateCcw size={12} />
-        Clear filters
+        Reset filters
       </button>
       {hover && (
         <div
@@ -1217,7 +1217,7 @@ function ClearFiltersButton({ onClear }: { onClear: () => void }) {
             boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
           }}
         >
-          Resets every filter — but keeps the latest Reddit threads selected.
+          Restores all filters to their defaults.
           <span
             className="absolute bottom-full right-4 -mb-px"
             style={{
