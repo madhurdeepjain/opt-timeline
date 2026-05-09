@@ -6,6 +6,7 @@ const nextConfig = {
   },
   outputFileTracingIncludes: {
     '/api/data': ['./data/**/*'],
+    '/api/meta': ['./data/meta.json'],
   },
 }
 
