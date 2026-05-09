@@ -81,8 +81,7 @@ export default function Home() {
 
   useEffect(() => {
     function handleSync(e: Event) {
-      const { typeFilter, premiumFilter, source } = (e as CustomEvent).detail
-      if (source === 'page') return
+      const { typeFilter, premiumFilter } = (e as CustomEvent).detail
       setFilters(prev => ({
         ...prev,
         type: typeFilter === 'OPT' ? 'OPT' : typeFilter === 'STEM' ? 'STEM' : 'all',
@@ -93,17 +92,12 @@ export default function Home() {
     return () => window.removeEventListener('opt-filters-sync', handleSync)
   }, [])
 
+  function handleFiltersClear() {
+    setFilters(DEFAULT_FILTERS)
+  }
+
   function handleFiltersChange(newFilters: FilterState) {
     setFilters(newFilters)
-    if (newFilters.type !== filters.type || newFilters.premium !== filters.premium) {
-      const typeFilter = (newFilters.type === 'OPT' || newFilters.type === 'STEM') ? newFilters.type : null
-      const premiumFilter = (newFilters.premium === 'premium' || newFilters.premium === 'standard') ? newFilters.premium : null
-      try {
-        const prefs = JSON.parse(localStorage.getItem('way-prefs') ?? '{}')
-        localStorage.setItem('way-prefs', JSON.stringify({ ...prefs, typeFilter, premiumFilter }))
-      } catch {}
-      window.dispatchEvent(new CustomEvent('opt-filters-sync', { detail: { typeFilter, premiumFilter, source: 'page' } }))
-    }
   }
 
   useEffect(() => {
@@ -329,7 +323,7 @@ export default function Home() {
 
             {/* Filters */}
             <section>
-              <Filters filters={filters} onChange={handleFiltersChange} total={filtered.length} citizenshipOptions={citizenshipOptions} banStatusCounts={banStatusCounts} cardStatusCounts={cardStatusCounts} ternaryCounts={ternaryCounts} pillCounts={pillCounts} threadCounts={threadCounts} appliedDateBounds={appliedDateBounds} appliedDateDistribution={appliedDateDistribution} />
+              <Filters filters={filters} onChange={handleFiltersChange} onClear={handleFiltersClear} total={filtered.length} citizenshipOptions={citizenshipOptions} banStatusCounts={banStatusCounts} cardStatusCounts={cardStatusCounts} ternaryCounts={ternaryCounts} pillCounts={pillCounts} threadCounts={threadCounts} appliedDateBounds={appliedDateBounds} appliedDateDistribution={appliedDateDistribution} />
             </section>
 
             {/* Stats */}

@@ -51,6 +51,7 @@ interface PillCounts {
 interface FiltersProps {
   filters: FilterState
   onChange: (filters: FilterState) => void
+  onClear: () => void
   total: number
   citizenshipOptions: CitizenshipOptions
   banStatusCounts: BanStatusCounts
@@ -1044,7 +1045,7 @@ function AppliedDateFilter({
   )
 }
 
-export default function Filters({ filters, onChange, total, citizenshipOptions, banStatusCounts, cardStatusCounts, ternaryCounts, pillCounts, threadCounts, appliedDateBounds, appliedDateDistribution }: FiltersProps) {
+export default function Filters({ filters, onChange, onClear, total, citizenshipOptions, banStatusCounts, cardStatusCounts, ternaryCounts, pillCounts, threadCounts, appliedDateBounds, appliedDateDistribution }: FiltersProps) {
   return (
     <div className="flex flex-wrap items-center gap-4">
       <ThreadFilter
@@ -1179,7 +1180,7 @@ export default function Filters({ filters, onChange, total, citizenshipOptions, 
 
       <div className="flex items-center gap-3 ml-auto">
         {!isDefaultFilters(filters) && (
-          <ClearFiltersButton onClear={() => onChange(DEFAULT_FILTERS)} />
+          <ClearFiltersButton onClear={onClear} />
         )}
         <span className="text-sm" style={{ color: 'var(--mute)' }}>
           {total.toLocaleString()} records

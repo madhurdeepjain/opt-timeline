@@ -93,17 +93,6 @@ export default function WhereAreYouCard({ records }: { records: TimelineRecord[]
     return () => window.removeEventListener('journey-updated', handleJourneyUpdate)
   }, [])
 
-  // Keep in sync when main filters change type/premium
-  useEffect(() => {
-    function handleSync(e: Event) {
-      const { typeFilter: tf, premiumFilter: pf, source } = (e as CustomEvent).detail
-      if (source === 'where-are-you') return
-      setTypeFilter(tf ?? null)
-      setPremiumFilter(pf ?? null)
-    }
-    window.addEventListener('opt-filters-sync', handleSync)
-    return () => window.removeEventListener('opt-filters-sync', handleSync)
-  }, [])
 
   // Always scoped to 2026 threads only
   const base2026 = useMemo(
