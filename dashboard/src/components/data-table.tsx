@@ -6,7 +6,18 @@ import { formatDate, cn } from '@/lib/utils'
 import { Download, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react'
 import Papa from 'papaparse'
 
-type SortKey = 'date_applied' | 'days_to_approval' | 'days_to_card' | 'normalized_type'
+type SortKey =
+  | 'normalized_type'
+  | 'premium_processing'
+  | 'date_applied'
+  | 'biometrics_requested_date'
+  | 'biometrics_completed_date'
+  | 'date_approved'
+  | 'date_card_produced'
+  | 'date_card_received'
+  | 'days_to_approval'
+  | 'days_to_card'
+  | 'country_of_citizenship'
 type SortDir = 'asc' | 'desc'
 
 
@@ -51,8 +62,8 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
 
   const sorted = useMemo(() => {
     return [...records].sort((a, b) => {
-      let av: string | number | null = a[sortKey]
-      let bv: string | number | null = b[sortKey]
+      let av: string | number | null = a[sortKey] === true ? 1 : a[sortKey] === false ? 0 : (a[sortKey] as string | number | null)
+      let bv: string | number | null = b[sortKey] === true ? 1 : b[sortKey] === false ? 0 : (b[sortKey] as string | number | null)
       if (av === null || av === undefined) av = sortDir === 'asc' ? Infinity : -Infinity
       if (bv === null || bv === undefined) bv = sortDir === 'asc' ? Infinity : -Infinity
       if (typeof av === 'string' && typeof bv === 'string') {
@@ -122,51 +133,16 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
           <thead>
             <tr style={{ borderBottom: '1px solid var(--hairline)' }}>
               <Th col="normalized_type" label="Type" />
-              <th
-                className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
-                style={{ color: 'var(--mute)' }}
-              >
-                Premium
-              </th>
+              <Th col="premium_processing" label="Premium" />
               <Th col="date_applied" label="Applied" />
-              <th
-                className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
-                style={{ color: 'var(--mute)' }}
-              >
-                Bio Requested
-              </th>
-              <th
-                className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
-                style={{ color: 'var(--mute)' }}
-              >
-                Bio Completed
-              </th>
-              <th
-                className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
-                style={{ color: 'var(--mute)' }}
-              >
-                Approved
-              </th>
-              <th
-                className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
-                style={{ color: 'var(--mute)' }}
-              >
-                Card Produced
-              </th>
-              <th
-                className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
-                style={{ color: 'var(--mute)' }}
-              >
-                Card Received
-              </th>
+              <Th col="biometrics_requested_date" label="Bio Requested" />
+              <Th col="biometrics_completed_date" label="Bio Completed" />
+              <Th col="date_approved" label="Approved" />
+              <Th col="date_card_produced" label="Card Produced" />
+              <Th col="date_card_received" label="Card Received" />
               <Th col="days_to_approval" label="Days → Approval" />
               <Th col="days_to_card" label="Days → Card" />
-              <th
-                className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
-                style={{ color: 'var(--mute)' }}
-              >
-                Citizenship
-              </th>
+              <Th col="country_of_citizenship" label="Citizenship" />
               <th
                 className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
                 style={{ color: 'var(--mute)' }}
