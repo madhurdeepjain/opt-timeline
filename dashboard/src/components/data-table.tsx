@@ -18,6 +18,7 @@ type SortKey =
   | 'days_to_approval'
   | 'days_to_card'
   | 'country_of_citizenship'
+  | 'created_utc'
 type SortDir = 'asc' | 'desc'
 
 
@@ -143,6 +144,7 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
               <Th col="days_to_approval" label="Days → Approval" />
               <Th col="days_to_card" label="Days → Card" />
               <Th col="country_of_citizenship" label="Citizenship" />
+              <Th col="created_utc" label="Posted" />
               <th
                 className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
                 style={{ color: 'var(--mute)' }}
@@ -209,6 +211,11 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
                 <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
                   {r.country_of_citizenship ?? '—'}
                 </td>
+                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                  {r.created_utc
+                    ? new Date(r.created_utc).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    : '—'}
+                </td>
                 <td className="px-4 py-3">
                   {r.permalink && (
                     <a
@@ -227,7 +234,7 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
             {pageData.length === 0 && (
               <tr>
                 <td
-                  colSpan={12}
+                  colSpan={13}
                   className="px-4 py-12 text-center text-sm"
                   style={{ color: 'var(--mute)' }}
                 >
