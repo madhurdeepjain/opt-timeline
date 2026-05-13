@@ -282,21 +282,7 @@ export default function Home() {
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--canvas)' }}>
       <Nav lastUpdated={fetchedAt} />
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-6 py-10 space-y-10">
-
-        {/* Hero */}
-        <div>
-          <h1
-            className="text-3xl font-bold mb-2"
-            style={{ color: 'var(--ink)', letterSpacing: '-0.5px' }}
-          >
-            OPT Processing Timelines
-          </h1>
-          <p className="text-base max-w-xl" style={{ color: 'var(--body)' }}>
-            Real processing times shared by students on Reddit. Use this to calibrate your expectations
-            and understand what&apos;s typical for your situation.
-          </p>
-        </div>
+      <main className="flex-1 max-w-6xl mx-auto w-full px-6 py-6 space-y-10">
 
         {/* Loading / Error states */}
         {loading && (

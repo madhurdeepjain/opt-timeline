@@ -35,11 +35,19 @@ export default function Nav({ lastUpdated }: { lastUpdated: string | null }) {
               <span className="text-lg font-bold" style={{ color: 'var(--ink)' }}>
                 OPT Timeline
               </span>
-              <span
-                className="hidden sm:inline-block text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full"
-                style={{ backgroundColor: 'var(--primary)', color: 'var(--ink)' }}
-              >
-                Community
+              <span className="hidden sm:inline-block relative group">
+                <span
+                  className="text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full cursor-default"
+                  style={{ backgroundColor: 'var(--primary)', color: 'var(--ink)' }}
+                >
+                  Community
+                </span>
+                <span
+                  className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-2 w-64 rounded-md px-3 py-2 text-xs leading-snug opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-normal text-center"
+                  style={{ backgroundColor: 'var(--ink)', color: 'var(--canvas)' }}
+                >
+                  Real OPT processing times shared by students on r/f1visa &amp; r/USCIS
+                </span>
               </span>
             </div>
             {lastUpdated && (
@@ -55,9 +63,6 @@ export default function Nav({ lastUpdated }: { lastUpdated: string | null }) {
               Updated {lastUpdated}
             </span>
           )}
-          <span className="text-xs hidden sm:block" style={{ color: 'var(--mute)' }}>
-            r/f1visa · r/USCIS
-          </span>
           <a
             href="https://github.com/madhurdeepjain/opt-timeline"
             target="_blank"
