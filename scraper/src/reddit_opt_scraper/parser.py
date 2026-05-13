@@ -1,7 +1,7 @@
 """Parse OPT timeline template fields from Reddit comment bodies."""
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 # ── Null/empty sentinel values ────────────────────────────────────────────────
@@ -24,23 +24,59 @@ _DATE_FORMATS = [
     # Month-name formats: "Feb 2, 2026" / "February 2, 2026"
     ("%b %d, %Y", re.compile(r"\b[A-Za-z]{3,9}\s+\d{1,2},\s*\d{4}\b")),
     ("%B %d, %Y", re.compile(r"\b[A-Za-z]{3,9}\s+\d{1,2},\s*\d{4}\b")),
+    # Day-first month-name formats: "16 Oct 2025" / "16 October 2025"
+    ("%d %b %Y", re.compile(r"\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b")),
+    ("%d %B %Y", re.compile(r"\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b")),
+]
+
+# Normalize "Sept" → "Sep" since strptime's %b only accepts the 3-letter abbreviation.
+_SEPT_FIX = re.compile(r"\bSept\b", re.I)
+
+# Month-year only formats checked LAST — after ordinal checks — to avoid intercepting
+# "30th Jan 2026" and returning Jan 1 instead of Jan 30.
+_MONTH_YEAR_FORMATS = [
+    ("%b %Y", re.compile(r"\b[A-Za-z]{3,9}\s+\d{4}\b")),
+    ("%B %Y", re.compile(r"\b[A-Za-z]{3,9}\s+\d{4}\b")),
 ]
 
 _SLASH_DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
+# Normalise malformed slashes ("05 / 15 / 2025", "03//04/2026") before matching
+_SLASH_NORMALIZE = re.compile(r"\s*/+\s*")
 
-# Ordinal date: "13th Oct 2025", "2nd Nov 2025", "1st Jan 2026"
+# Ordinal date with year: "13th Oct 2025", "2nd Nov 2025", "1st Jan 2026"
 _ORDINAL_DATE = re.compile(
     r"\b(\d{1,2})(?:st|nd|rd|th)\s+([A-Za-z]{3,9})\s+(\d{4})\b", re.I
 )
+# Ordinal date without year: "3rd May", "28th Jan" — year inferred from context
+_ORDINAL_DATE_NO_YEAR = re.compile(
+    r"\b(\d{1,2})(?:st|nd|rd|th)\s+([A-Za-z]{3,9})\b(?!\s*\d{4})", re.I
+)
 
 
-def parse_date(value: str) -> Optional[str]:
-    """Return ISO YYYY-MM-DD or None. Accepts values like 'YES | 02/14/2026'."""
+def parse_date(
+    value: str,
+    *,
+    thread_year: Optional[int] = None,
+    created_utc: Optional[datetime] = None,
+) -> Optional[str]:
+    """Return ISO YYYY-MM-DD or None. Accepts values like 'YES | 02/14/2026'.
+
+    For dates without a year ("6th April"), the year is inferred from
+    ``thread_year`` (the OPT cycle the thread is about) first, falling back to
+    the year of ``created_utc`` if no thread context was given. When both
+    candidates parse, prefers the latest one that is not after ``created_utc``
+    (the event must have already happened by the time the comment was written).
+    """
     if not value:
         return None
     v = value.strip()
     if v.lower() in NULL_VALUES:
         return None
+
+    # Normalise malformed slashes: "05 / 15 / 2025" → "05/15/2025", "03//04" → "03/04"
+    v = _SLASH_NORMALIZE.sub("/", v)
+    # "Sept" → "Sep" so %b parses cleanly.
+    v = _SEPT_FIX.sub("Sep", v)
 
     # Detect DD/MM/YYYY: if the first segment > 12 it can't be a month
     m = _SLASH_DATE.search(v)
@@ -64,13 +100,58 @@ def parse_date(value: str) -> Optional[str]:
             except ValueError:
                 continue
 
-    # Ordinal format: "13th Oct 2025", "2nd Nov 2025", "21st March 2025"
+    # Ordinal with year: "13th Oct 2025", "2nd Nov 2025", "21st March 2025"
     m = _ORDINAL_DATE.search(v)
     if m:
         candidate = f"{m.group(1)} {m.group(2)} {m.group(3)}"
         for fmt in ("%d %b %Y", "%d %B %Y"):
             try:
                 d = datetime.strptime(candidate, fmt)
+                if 2020 <= d.year <= 2035:
+                    return d.strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+
+    # Ordinal without year: "3rd May", "28th Jan". Anchor inference to the
+    # thread year (the OPT cycle) when known; otherwise the comment's
+    # created_utc year. Try the anchor and the year before it, and pick the
+    # latest candidate that's not after the comment was written.
+    m = _ORDINAL_DATE_NO_YEAR.search(v)
+    if m:
+        if thread_year is not None:
+            anchor = thread_year
+        elif created_utc is not None:
+            anchor = created_utc.year
+        else:
+            anchor = datetime.now().year
+        ceiling = created_utc or datetime.now()
+
+        candidates: list[datetime] = []
+        for yr in (anchor, anchor - 1):
+            cand_text = f"{m.group(1)} {m.group(2)} {yr}"
+            for fmt in ("%d %b %Y", "%d %B %Y"):
+                try:
+                    d = datetime.strptime(cand_text, fmt)
+                except ValueError:
+                    continue
+                if 2020 <= d.year <= 2035:
+                    candidates.append(d)
+                    break
+
+        if candidates:
+            # Prefer the most recent candidate that's not in the future
+            # relative to when the comment was posted.
+            plausible = [d for d in candidates if d.date() <= ceiling.date()]
+            chosen = max(plausible) if plausible else min(candidates)
+            return chosen.strftime("%Y-%m-%d")
+
+    # Month-year only: "May 2026", "December 2025" → 1st of month.
+    # Checked last so ordinal dates ("30th Jan 2026") are never intercepted.
+    for fmt, pat in _MONTH_YEAR_FORMATS:
+        m = pat.search(v)
+        if m:
+            try:
+                d = datetime.strptime(m.group(), fmt)
                 if 2020 <= d.year <= 2035:
                     return d.strftime("%Y-%m-%d")
             except ValueError:
@@ -83,9 +164,134 @@ def parse_bool(value: str) -> Optional[bool]:
     v = value.strip().lower()
     if v in ("yes", "y", "true", "1"):
         return True
-    if v in ("no", "n", "false", "0"):
+    if v in ("no", "n", "false", "0", "nope"):
         return False
     return None
+
+
+# ── Premium-processing helpers ────────────────────────────────────────────────
+# Phrases that signal an upgrade from regular → PP after the initial application.
+_PP_UPGRADE_RE = re.compile(
+    r"\b(?:"
+    r"switch(?:ed)?\s+to"
+    r"|convert(?:ed)?\s+to"
+    r"|transfer(?:red)?\s+to"
+    r"|upgrade[d]?\s+(?:to\b|on\b|later\b)"
+    r"|opted\s+for"
+    r"|applied\s+pp"
+    r"|added\s+(?:on\b|pp\b|premium\b)"
+    r"|updated\s+(?:on\b|to\b)"
+    r"|pp\s+on\b"
+    r")",
+    re.I,
+)
+
+# Arrow upgrade: "no -> yes", "no → yes" (HTML &gt; is decoded by _clean before we get here)
+_PP_ARROW = re.compile(r"no\s*(?:->|→|=>)\s*yes", re.I)
+
+# Paren/bracket content (ASCII and Unicode full-width variants)
+_PP_PAREN = re.compile(r"[（(]([^）)]*)[）)]")
+
+# Field names that indicate a multiline bleed from adjacent template fields
+_PP_OTHER_FIELDS = re.compile(
+    r"\b(?:receipt|approved|card\s+(?:produced|shipped|delivered|received)|start\s+date)\b",
+    re.I,
+)
+
+
+def _pp_upgrade_date(
+    v: str,
+    *,
+    thread_year: Optional[int] = None,
+    created_utc: Optional[datetime] = None,
+) -> Optional[str]:
+    """Return the upgrade date from a PP value string.
+
+    Priority: date in parentheses > date after upgrade keyword > bare date
+    (the last is skipped if adjacent template field names are present, to
+    avoid picking up dates from multiline bleeds).
+    """
+    for content in _PP_PAREN.findall(v):
+        d = parse_date(content, thread_year=thread_year, created_utc=created_utc)
+        if d:
+            return d
+    m = _PP_UPGRADE_RE.search(v)
+    if m:
+        d = parse_date(v[m.start():], thread_year=thread_year, created_utc=created_utc)
+        if d:
+            return d
+    if not _PP_OTHER_FIELDS.search(v):
+        return parse_date(v, thread_year=thread_year, created_utc=created_utc)
+    return None
+
+
+def parse_premium_processing(
+    value: str,
+    *,
+    thread_year: Optional[int] = None,
+    created_utc: Optional[datetime] = None,
+) -> tuple[Optional[bool], Optional[bool], Optional[str]]:
+    """Parse a PP field value into (premium_processing, pp_upgraded, pp_upgrade_date).
+
+    Handles all patterns seen in practice:
+      YES / NO / nope
+      YES (date) — applied with or upgraded to PP, date noted
+      NO (switched to PP on date) / No(PP:date) / no -> yes
+      Switched to PP on date / Opted for Premium / Upgraded on date
+      date-only — bare date means PP was used
+    """
+    if not value:
+        return None, None, None
+    v = value.strip()
+    if v.lower() in NULL_VALUES:
+        return None, None, None
+
+    # Arrow upgrade: "no -> yes"
+    if _PP_ARROW.search(v):
+        return True, True, _pp_upgrade_date(v, thread_year=thread_year, created_utc=created_utc)
+
+    # Strip parens (ASCII + full-width) for the boolean portion
+    bool_str = _PP_PAREN.sub("", v).strip(" ,.*-/\\")
+
+    pp_bool = parse_bool(bool_str)
+
+    # Lenient: accept "yes" / "no" as a leading word even with trailing junk
+    if pp_bool is None:
+        m = re.match(r"(yes|no|y|n)\b", bool_str, re.I)
+        if m:
+            pp_bool = parse_bool(m.group(1))
+
+    if pp_bool is None:
+        # Keyword-only upgrade value: "Switched to PP on …", "Opted for Premium", "Upgraded on"
+        if _PP_UPGRADE_RE.search(bool_str):
+            return True, True, _pp_upgrade_date(v, thread_year=thread_year, created_utc=created_utc)
+        # Date-only: nothing meaningful left after stripping slash-dates
+        date_stripped = re.sub(r"\b\d{1,2}[/\-]\d{1,2}[/\-](?:\d{2}|\d{4})\b", "", bool_str).strip()
+        d = parse_date(v, thread_year=thread_year, created_utc=created_utc)
+        if d and not date_stripped:
+            return True, None, d
+        # Explicit negative phrasing
+        if bool_str.lower().startswith(("no", "not", "nope")):
+            return False, None, None
+        return None, None, None
+
+    if pp_bool is True:
+        d = _pp_upgrade_date(v, thread_year=thread_year, created_utc=created_utc)
+        if d:
+            return True, True, d
+        return True, None, None
+
+    # pp_bool is False — look for upgrade signals in the full string
+    m_no = re.match(r"(?:no|nope|n)\b", v, re.I)
+    suffix = v[m_no.end():] if m_no else v
+    has_upgrade = (
+        _PP_UPGRADE_RE.search(v)
+        or re.search(r"\byes\b", suffix, re.I)
+        or re.search(r"\bpp\s*:", v, re.I)
+    )
+    if has_upgrade:
+        return True, True, _pp_upgrade_date(v, thread_year=thread_year, created_utc=created_utc)
+    return False, None, None
 
 
 def parse_type(value: str) -> tuple[str, str]:
@@ -283,10 +489,16 @@ _FIELD_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"card\s+produced", re.I), "date_card_produced"),
     (re.compile(r"card\s+shipped", re.I), "date_card_shipped"),
     (re.compile(r"card\s+mailed", re.I), "date_card_shipped"),
-    (re.compile(r"date\s+card\s+received", re.I), "date_card_received"),
-    (re.compile(r"card\s+(received|delivered)", re.I), "date_card_received"),
+    (re.compile(r"date\s+card\s+rec(?:ei|ie)ved", re.I), "date_card_received"),
+    (re.compile(r"card\s+(?:rec(?:ei|ie)ved|delivered)", re.I), "date_card_received"),
     (re.compile(r"country\s+of\s+citizenship", re.I), "country_of_citizenship"),
     (re.compile(r"\b(country|citizenship|nationality)\b", re.I), "country_of_citizenship"),
+    (re.compile(r"(?:opt|stem\s+opt|employment|job|intended)\s+start\s+date", re.I), "employment_start_date"),
+    (re.compile(r"start\s+date", re.I), "employment_start_date"),
+    (re.compile(r"service\s+cent(?:er|re)", re.I), "service_center"),
+    (re.compile(r"processing\s+cent(?:er|re)", re.I), "service_center"),
+    (re.compile(r"graduat(?:ion\s+date|ion\s*$|ed\s+date|date\s+of\s+graduation)", re.I), "graduation_date"),
+    (re.compile(r"a[#\-]?\s*number", re.I), "a_number_date"),
 ]
 
 _PAREN_NOTE = re.compile(r"\s*\(.*?\)")  # strip "(if applicable)" etc.
@@ -320,8 +532,54 @@ def _split_kv(line: str) -> tuple[Optional[str], Optional[str]]:
 _DATE_FIELDS = frozenset({
     "date_applied", "rfie_date", "biometrics_requested_date",
     "date_approved", "date_card_produced", "date_card_shipped",
-    "date_card_received",
+    "date_card_received", "employment_start_date", "graduation_date",
+    "a_number_date",
 })
+
+# ── Service-center normalization ──────────────────────────────────────────────
+_SC_CANONICAL = {
+    "potomac": "Potomac",
+    "glenmont": "Potomac",      # Potomac SC is physically in Glenmont, MD
+    "irving": "Irving, TX",
+    "texas": "Irving, TX",
+    "nebraska": "Nebraska",
+    "california": "California",
+    "york": "York, SC",
+    "ysc": "York, SC",
+}
+
+# Phrases that mean the poster doesn't know their service center → treat as unspecified
+_SC_UNCERTAIN = re.compile(
+    r"\b(?:not\s+sure|don'?t\s+know|no\s+idea|unsure|uncertain)\b", re.I
+)
+
+
+def _normalize_service_center(raw: str) -> Optional[str]:
+    v = re.sub(r"\(.*?\)", "", raw).strip(" .,;:-")
+    if not v or v.lower() in NULL_VALUES:
+        return None
+    # Uncertainty phrases → unspecified
+    if _SC_UNCERTAIN.search(v):
+        return None
+    # ASC entries are biometrics appointment locations, not processing service centers
+    if re.match(r"asc\b", v, re.I) or re.search(r"\basc\s*[@#]", v, re.I):
+        return None
+    lower = v.lower()
+    for key, canonical in _SC_CANONICAL.items():
+        if re.search(r"\b" + re.escape(key) + r"\b", lower):
+            return canonical
+    # Unrecognised center: return cleaned value truncated at noise characters
+    v = re.split(r"\s{2,}|\d+\.\s", v)[0].strip(" .,;:-")
+    if not v:
+        return None
+    # Reject obvious parse artifacts: too short, no real word, or stop-words
+    # like "on" that bled in from line wrapping.
+    if len(v) < 4:
+        return None
+    if not re.search(r"[A-Za-z]{4,}", v):
+        return None
+    return v
+
 
 _LOC_DATE_RE = re.compile(r"\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}")
 
@@ -330,16 +588,28 @@ _LOC_DATE_RE = re.compile(r"\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}")
 _LINE_SPLIT_RE = re.compile(r"\n|\s{3,}|(?<=\s)[•*]\s*|^\s*[*\-•|]\s*", re.MULTILINE)
 
 
-def parse_comment(body: str) -> dict:
+def parse_comment(
+    body: str,
+    *,
+    thread_year: Optional[int] = None,
+    created_utc: Optional[datetime] = None,
+) -> dict:
     """
     Parse a comment body into structured fields.
     Returns a dict of normalized field values (all optional — may be None).
+
+    ``thread_year`` and ``created_utc`` are passed down to date parsing so
+    ordinal dates without a year ("6th April") can be anchored to the OPT
+    cycle the thread is about, not to wall-clock ``now()``.
     """
     result: dict = {
         "type": None,
         "normalized_type": None,
         "premium_processing": None,
+        "pp_upgraded": None,
+        "pp_upgrade_date": None,
         "date_applied": None,
+        "employment_start_date": None,
         "rfie_date": None,
         "biometrics_requested_date": None,
         "biometrics_completed_date": None,
@@ -352,6 +622,9 @@ def parse_comment(body: str) -> dict:
         "date_card_received": None,
         "country_of_citizenship": None,
         "ban_status": None,
+        "service_center": None,
+        "graduation_date": None,
+        "a_number_date": None,
     }
 
     if not body:
@@ -391,12 +664,19 @@ def parse_comment(body: str) -> dict:
 
         elif field == "premium_processing":
             if result["premium_processing"] is None:
-                result["premium_processing"] = parse_bool(value)
+                pp_bool, pp_upgraded, pp_date = parse_premium_processing(
+                    value, thread_year=thread_year, created_utc=created_utc
+                )
+                result["premium_processing"] = pp_bool
+                result["pp_upgraded"] = pp_upgraded
+                result["pp_upgrade_date"] = pp_date
 
         elif field == "biometrics_completed_date":
             # May include location after the date, e.g. "3/2/2026 - ASC Boston"
             if result["biometrics_completed_date"] is None:
-                result["biometrics_completed_date"] = parse_date(value)
+                result["biometrics_completed_date"] = parse_date(
+                    value, thread_year=thread_year, created_utc=created_utc
+                )
                 m = _LOC_DATE_RE.search(value)
                 if m:
                     suffix = value[m.end():].strip(" -|,")
@@ -405,14 +685,18 @@ def parse_comment(body: str) -> dict:
 
         elif field in _DATE_FIELDS:
             if result[field] is None:
-                result[field] = parse_date(value)
+                result[field] = parse_date(
+                    value, thread_year=thread_year, created_utc=created_utc
+                )
 
         elif field == "noid":
             if result["noid"] is None:
                 b = parse_bool(value)
                 result["noid"] = b
                 if b:
-                    result["noid_date"] = parse_date(value)
+                    result["noid_date"] = parse_date(
+                        value, thread_year=thread_year, created_utc=created_utc
+                    )
 
         elif field == "country_of_citizenship":
             # Extract country and ban status. We allow setting them independently
@@ -422,6 +706,24 @@ def parse_comment(body: str) -> dict:
                 result["country_of_citizenship"] = country
             if ban and result["ban_status"] is None:
                 result["ban_status"] = ban
+
+        elif field == "service_center":
+            if result["service_center"] is None:
+                sc = _normalize_service_center(value)
+                if sc:
+                    result["service_center"] = sc
+
+    # Fallback: posters often write "Initial POST-COMPLETION OPT" or
+    # "STEM OPT EXTENSION" on its own bulleted line with no "Type:" prefix.
+    # If the type field never matched, infer from the body keywords.
+    if result["normalized_type"] is None:
+        up = text.upper()
+        if re.search(r"\bSTEM\s+OPT\b", up) or "STEM EXTENSION" in up:
+            result["type"] = result["type"] or "STEM OPT"
+            result["normalized_type"] = "STEM"
+        elif re.search(r"\b(?:POST[\s\-‑–—]*COMPLETION\s+)?OPT\b", up):
+            result["type"] = result["type"] or "OPT"
+            result["normalized_type"] = "OPT"
 
     return result
 

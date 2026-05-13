@@ -7,7 +7,10 @@ export interface TimelineRecord {
   type: string
   normalized_type: 'OPT' | 'STEM' | string
   premium_processing: boolean | null
+  pp_upgraded: boolean | null
+  pp_upgrade_date: string | null
   date_applied: string | null
+  employment_start_date: string | null
   rfie_date: string | null
   biometrics_requested_date: string | null
   biometrics_completed_date: string | null
@@ -20,6 +23,7 @@ export interface TimelineRecord {
   date_card_received: string | null
   country_of_citizenship: string | null
   ban_status: 'restricted' | 'non_restricted' | null
+  service_center: string | null
   days_to_approval: number | null
   days_to_card: number | null
   raw_text: string
@@ -45,14 +49,18 @@ export const THREAD_OPTIONS: ThreadOption[] = [
 // pick "India" + "Unspecified" together.
 export const CITIZENSHIP_UNSPECIFIED = '__unspecified__'
 
+// Same pattern for service center — selects rows with no service_center value.
+export const SERVICE_CENTER_UNSPECIFIED = '__sc_unspecified__'
+
 export interface FilterState {
   type: 'all' | 'OPT' | 'STEM' | 'unknown'
-  premium: 'all' | 'standard' | 'premium' | 'unknown'
+  premium: 'all' | 'standard' | 'premium' | 'upgraded' | 'unknown'
   approved: 'all' | 'yes' | 'no' | 'unknown'
   cardStatus: ('none' | 'produced' | 'received')[]
   rfie: 'all' | 'yes' | 'no'
   banStatus: ('restricted' | 'non_restricted' | 'unknown')[]
   citizenship: string[]
+  serviceCenter: string[]
   threads: string[]
   appliedDateFrom: string | null
   appliedDateTo: string | null
@@ -68,6 +76,7 @@ export const DEFAULT_FILTERS: FilterState = {
   rfie: 'all',
   banStatus: [],
   citizenship: [],
+  serviceCenter: [],
   threads: DEFAULT_THREADS,
   appliedDateFrom: null,
   appliedDateTo: null,

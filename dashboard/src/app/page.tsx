@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import Papa from 'papaparse'
 import type { TimelineRecord, FilterState } from '@/lib/types'
-import { CITIZENSHIP_UNSPECIFIED, DEFAULT_FILTERS } from '@/lib/types'
+import { CITIZENSHIP_UNSPECIFIED, SERVICE_CENTER_UNSPECIFIED, DEFAULT_FILTERS } from '@/lib/types'
 import { applyFilters, computeStats, buildHistogramData, buildMonthlyTrendData } from '@/lib/data'
 import { formatDate } from '@/lib/utils'
 
@@ -45,7 +45,10 @@ function mapRow(row: Record<string, string>): TimelineRecord {
     type: row.type ?? '',
     normalized_type: row.normalized_type ?? '',
     premium_processing: parseBool(row.premium_processing),
+    pp_upgraded: parseBool(row.pp_upgraded),
+    pp_upgrade_date: parseStr(row.pp_upgrade_date),
     date_applied: parseStr(row.date_applied),
+    employment_start_date: parseStr(row.employment_start_date),
     rfie_date: parseStr(row.rfie_date),
     biometrics_requested_date: parseStr(row.biometrics_requested_date),
     biometrics_completed_date: parseStr(row.biometrics_completed_date),
@@ -58,6 +61,7 @@ function mapRow(row: Record<string, string>): TimelineRecord {
     date_card_received: parseStr(row.date_card_received),
     country_of_citizenship: parseStr(row.country_of_citizenship),
     ban_status: (row.ban_status === 'restricted' || row.ban_status === 'non_restricted') ? row.ban_status : null,
+    service_center: parseStr(row.service_center),
     days_to_approval: parseNum(row.days_to_approval),
     days_to_card: parseNum(row.days_to_card),
     raw_text: row.raw_text ?? '',
@@ -153,9 +157,10 @@ export default function Home() {
       else if (r.normalized_type === 'STEM') stem++
       else typeUnk++
     }
-    let std = 0, prem = 0, premUnk = 0
+    let std = 0, prem = 0, upgraded = 0, premUnk = 0
     for (const r of basePremium) {
       if (r.premium_processing === false) std++
+      else if (r.pp_upgraded === true) upgraded++
       else if (r.premium_processing === true) prem++
       else premUnk++
     }
@@ -163,7 +168,7 @@ export default function Home() {
     for (const r of baseApproved) if (r.date_approved) approvedYes++
     return {
       type: { OPT: opt, STEM: stem, unknown: typeUnk },
-      premium: { standard: std, premium: prem, unknown: premUnk },
+      premium: { standard: std, premium: prem, upgraded, unknown: premUnk },
       approved: { yes: approvedYes, no: baseApproved.length - approvedYes, unknown: 0 },
     }
   }, [records, filters])
@@ -212,6 +217,23 @@ export default function Home() {
     const entries = [...counts.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([country, count]) => ({ country, count }))
+    return { entries, unspecified }
+  }, [records, filters])
+
+  const serviceCenterOptions = useMemo(() => {
+    const base = applyFilters(records, { ...filters, serviceCenter: [] })
+    const counts = new Map<string, number>()
+    let unspecified = 0
+    for (const r of base) {
+      if (r.service_center) counts.set(r.service_center, (counts.get(r.service_center) ?? 0) + 1)
+      else unspecified++
+    }
+    for (const sel of filters.serviceCenter) {
+      if (sel !== SERVICE_CENTER_UNSPECIFIED && !counts.has(sel)) counts.set(sel, 0)
+    }
+    const entries = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([center, count]) => ({ center, count }))
     return { entries, unspecified }
   }, [records, filters])
 
@@ -323,7 +345,7 @@ export default function Home() {
 
             {/* Filters */}
             <section>
-              <Filters filters={filters} onChange={handleFiltersChange} onClear={handleFiltersClear} total={filtered.length} citizenshipOptions={citizenshipOptions} banStatusCounts={banStatusCounts} cardStatusCounts={cardStatusCounts} ternaryCounts={ternaryCounts} pillCounts={pillCounts} threadCounts={threadCounts} appliedDateBounds={appliedDateBounds} appliedDateDistribution={appliedDateDistribution} />
+              <Filters filters={filters} onChange={handleFiltersChange} onClear={handleFiltersClear} total={filtered.length} citizenshipOptions={citizenshipOptions} serviceCenterOptions={serviceCenterOptions} banStatusCounts={banStatusCounts} cardStatusCounts={cardStatusCounts} ternaryCounts={ternaryCounts} pillCounts={pillCounts} threadCounts={threadCounts} appliedDateBounds={appliedDateBounds} appliedDateDistribution={appliedDateDistribution} />
             </section>
 
             {/* Stats */}

@@ -1,12 +1,19 @@
 """Read/write the timeline CSV."""
 
 import csv
+import re
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
-from .config import CSV_FIELDS
-from .parser import _normalize_citizenship, compute_derived, has_template_data, parse_comment
+from .config import CSV_FIELDS, THREAD_YEAR_BY_POST_ID
+from .parser import (
+    _normalize_citizenship,
+    _normalize_service_center,
+    compute_derived,
+    has_template_data,
+    parse_comment,
+)
 
 # Fields that must be >= date_applied or are nulled out as typos.
 _AFTER_APPLIED_FIELDS = (
@@ -18,6 +25,38 @@ _AFTER_APPLIED_FIELDS = (
     "date_card_shipped",
     "date_card_received",
 )
+
+# Date fields that must not be in the future.
+_FUTURE_NULLABLE_FIELDS = (
+    "date_approved",
+    "date_card_produced",
+    "date_card_shipped",
+    "date_card_received",
+    "rfie_date",
+    "biometrics_requested_date",
+    "biometrics_completed_date",
+    "pp_upgrade_date",
+)
+
+_POST_ID_RE = re.compile(r"/comments/([a-z0-9]+)/", re.I)
+
+
+def _thread_year_from_permalink(permalink: str | None) -> int | None:
+    if not permalink:
+        return None
+    m = _POST_ID_RE.search(permalink)
+    if not m:
+        return None
+    return THREAD_YEAR_BY_POST_ID.get(m.group(1))
+
+
+def _parse_iso_dt(s: str | None) -> datetime | None:
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        return None
 
 
 def _coerce_bool(v):
@@ -37,17 +76,20 @@ def _rehabilitate(row: dict) -> dict | None:
     Returns None if the row should be dropped (future-dated, no usable data).
     """
     r = dict(row)
+    thread_year = _thread_year_from_permalink(r.get("permalink"))
+    created_dt = _parse_iso_dt(r.get("created_utc"))
+
     # Re-parse from raw_text to pick up fields missed by older parser versions.
     raw = r.get("raw_text") or ""
     if raw:
-        parsed = parse_comment(raw)
+        parsed = parse_comment(raw, thread_year=thread_year, created_utc=created_dt)
         for k, v in parsed.items():
             # Only fill if currently empty — never overwrite existing value
             # (the original parse may have caught something the re-parse misses).
             if not r.get(k) and v:
                 r[k] = v
     # Coerce booleans back from the CSV strings
-    for k in ("premium_processing", "noid"):
+    for k in ("premium_processing", "noid", "pp_upgraded"):
         r[k] = _coerce_bool(r.get(k))
     # Re-normalize citizenship (cleans casing, demonyms, ban-list phrases).
     # Always re-derive ban_status from the (possibly updated) country list.
@@ -57,15 +99,26 @@ def _rehabilitate(row: dict) -> dict | None:
         r["country_of_citizenship"] = country
         if ban:
             r["ban_status"] = ban
+    # Re-normalize service center (canonicalizes legacy lowercase / abbreviated
+    # values and rejects parse artifacts like "on").
+    sc = r.get("service_center")
+    if sc:
+        r["service_center"] = _normalize_service_center(sc)
+    today_iso = date.today().isoformat()
     # Drop future-dated date_applied
     da = r.get("date_applied") or None
-    if da and da > date.today().isoformat():
+    if da and da > today_iso:
         return None
     # Null out impossibly-early downstream dates
     if da:
         for f in _AFTER_APPLIED_FIELDS:
             if r.get(f) and r[f] < da:
                 r[f] = None
+    # Null out future-dated downstream fields — events that can't have happened yet.
+    for f in _FUTURE_NULLABLE_FIELDS:
+        v = r.get(f)
+        if v and v > today_iso:
+            r[f] = None
     # Recompute derived fields
     r = compute_derived(r)
     if not has_template_data(r):
@@ -151,7 +204,7 @@ def save(records: list[dict], path: Path) -> None:
         writer.writeheader()
         for r in rows:
             row = dict(r)
-            for k in ("premium_processing", "noid"):
+            for k in ("premium_processing", "noid", "pp_upgraded"):
                 if isinstance(row.get(k), bool):
                     row[k] = str(row[k]).lower()
             writer.writerow(row)

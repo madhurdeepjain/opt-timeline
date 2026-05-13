@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect, useMemo } from 'react'
 import type { FilterState } from '@/lib/types'
-import { THREAD_OPTIONS, CITIZENSHIP_UNSPECIFIED, DEFAULT_FILTERS } from '@/lib/types'
+import { THREAD_OPTIONS, CITIZENSHIP_UNSPECIFIED, SERVICE_CENTER_UNSPECIFIED, DEFAULT_FILTERS } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { ChevronDown, X, RotateCcw } from 'lucide-react'
 
@@ -17,6 +17,7 @@ function isDefaultFilters(f: FilterState): boolean {
   if (f.cardStatus.length !== 0) return false
   if (f.banStatus.length !== 0) return false
   if (f.citizenship.length !== 0) return false
+  if (f.serviceCenter.length !== 0) return false
   if (f.threads.length !== d.threads.length || !d.threads.every((t) => f.threads.includes(t))) return false
   return true
 }
@@ -44,8 +45,13 @@ interface CardStatusCounts {
 
 interface PillCounts {
   type: { OPT: number; STEM: number; unknown: number }
-  premium: { standard: number; premium: number; unknown: number }
+  premium: { standard: number; premium: number; upgraded: number; unknown: number }
   approved: { yes: number; no: number; unknown: number }
+}
+
+interface ServiceCenterOptions {
+  entries: { center: string; count: number }[]
+  unspecified: number
 }
 
 interface FiltersProps {
@@ -54,6 +60,7 @@ interface FiltersProps {
   onClear: () => void
   total: number
   citizenshipOptions: CitizenshipOptions
+  serviceCenterOptions: ServiceCenterOptions[]
   banStatusCounts: BanStatusCounts
   cardStatusCounts: CardStatusCounts
   ternaryCounts: TernaryCounts
@@ -476,6 +483,115 @@ function CardStatusDropdown({
                 {CARD_STATUS_LABELS[key]}
               </span>
               <span className="text-[11px]" style={{ color: 'var(--mute)' }}>{counts[key]}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ServiceCenterDropdown({
+  selected,
+  options,
+  onChange,
+}: {
+  selected: string[]
+  options: ServiceCenterOptions
+  onChange: (v: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  function toggle(value: string) {
+    if (selected.includes(value)) onChange(selected.filter((c) => c !== value))
+    else onChange([...selected, value])
+  }
+
+  const displayLabel = (v: string) => v === SERVICE_CENTER_UNSPECIFIED ? 'Unspecified' : v
+
+  const label =
+    selected.length === 0 ? 'All centers'
+    : selected.length === 1 ? displayLabel(selected[0])
+    : `${displayLabel(selected[0])} +${selected.length - 1}`
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors"
+        style={{
+          backgroundColor: selected.length > 0 ? 'var(--ink)' : 'var(--surface-soft)',
+          color: selected.length > 0 ? 'var(--on-ink)' : 'var(--body)',
+        }}
+      >
+        {label}
+        {selected.length > 0 ? (
+          <span
+            role="button"
+            onClick={(e) => { e.stopPropagation(); onChange([]) }}
+            className="flex items-center opacity-70 hover:opacity-100"
+          >
+            <X size={11} />
+          </span>
+        ) : (
+          <ChevronDown size={12} style={{ opacity: 0.5 }} />
+        )}
+      </button>
+
+      {open && (
+        <div
+          className="absolute top-full left-0 mt-1 z-50 rounded-md border shadow-md min-w-48 max-h-64 overflow-y-auto"
+          style={{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--hairline)' }}
+        >
+          {options.entries.length === 0 && options.unspecified === 0 && (
+            <p className="px-3 py-2 text-sm" style={{ color: 'var(--mute)' }}>No data yet</p>
+          )}
+          {options.unspecified > 0 && (
+            <>
+              <label
+                className="flex items-center justify-between gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-[var(--surface-soft)]"
+                style={{ color: 'var(--ink)' }}
+              >
+                <span className="flex items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(SERVICE_CENTER_UNSPECIFIED)}
+                    onChange={() => toggle(SERVICE_CENTER_UNSPECIFIED)}
+                    className="accent-[var(--ink)] w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <span style={{ fontStyle: 'italic', color: 'var(--mute)' }}>Unspecified</span>
+                </span>
+                <span className="text-[11px]" style={{ color: 'var(--mute)' }}>{options.unspecified}</span>
+              </label>
+              <div className="border-t" style={{ borderColor: 'var(--hairline)' }} />
+            </>
+          )}
+          {options.entries.map(({ center, count }) => (
+            <label
+              key={center}
+              className="flex items-center justify-between gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-[var(--surface-soft)]"
+              style={{ color: 'var(--ink)' }}
+            >
+              <span className="flex items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(center)}
+                  onChange={() => toggle(center)}
+                  className="accent-[var(--ink)] w-3.5 h-3.5 cursor-pointer"
+                />
+                {center}
+              </span>
+              <span className="text-[11px]" style={{ color: 'var(--mute)' }}>{count}</span>
             </label>
           ))}
         </div>
@@ -1045,7 +1161,7 @@ function AppliedDateFilter({
   )
 }
 
-export default function Filters({ filters, onChange, onClear, total, citizenshipOptions, banStatusCounts, cardStatusCounts, ternaryCounts, pillCounts, threadCounts, appliedDateBounds, appliedDateDistribution }: FiltersProps) {
+export default function Filters({ filters, onChange, onClear, total, citizenshipOptions, serviceCenterOptions, banStatusCounts, cardStatusCounts, ternaryCounts, pillCounts, threadCounts, appliedDateBounds, appliedDateDistribution }: FiltersProps) {
   return (
     <div className="flex flex-wrap items-center gap-4">
       <ThreadFilter
@@ -1098,7 +1214,8 @@ export default function Filters({ filters, onChange, onClear, total, citizenship
         allKey="all"
         options={[
           { key: 'standard', label: 'Standard', count: pillCounts.premium.standard },
-          { key: 'premium', label: 'Premium', count: pillCounts.premium.premium },
+          { key: 'premium', label: 'Premium (from start)', count: pillCounts.premium.premium },
+          { key: 'upgraded', label: 'Upgraded later', count: pillCounts.premium.upgraded },
           { key: 'unknown', label: 'Unknown', count: pillCounts.premium.unknown },
         ]}
         onChange={(premium) => onChange({ ...filters, premium })}
@@ -1115,6 +1232,9 @@ export default function Filters({ filters, onChange, onClear, total, citizenship
         </PillTab>
         <PillTab active={filters.premium === 'premium'} onClick={() => onChange({ ...filters, premium: 'premium' })} count={pillCounts.premium.premium}>
           Premium
+        </PillTab>
+        <PillTab active={filters.premium === 'upgraded'} onClick={() => onChange({ ...filters, premium: 'upgraded' })} count={pillCounts.premium.upgraded}>
+          Upgraded
         </PillTab>
         <PillTab active={filters.premium === 'unknown'} onClick={() => onChange({ ...filters, premium: 'unknown' })} count={pillCounts.premium.unknown}>
           Unknown
@@ -1164,6 +1284,12 @@ export default function Filters({ filters, onChange, onClear, total, citizenship
         yesCount={ternaryCounts.rfie.yes}
         noCount={ternaryCounts.rfie.no}
         onChange={(v) => onChange({ ...filters, rfie: v })}
+      />
+
+      <ServiceCenterDropdown
+        selected={filters.serviceCenter}
+        options={serviceCenterOptions}
+        onChange={(serviceCenter) => onChange({ ...filters, serviceCenter })}
       />
 
       <CitizenshipDropdown

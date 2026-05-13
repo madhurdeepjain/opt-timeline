@@ -9,7 +9,9 @@ import Papa from 'papaparse'
 type SortKey =
   | 'normalized_type'
   | 'premium_processing'
+  | 'pp_upgrade_date'
   | 'date_applied'
+  | 'employment_start_date'
   | 'biometrics_requested_date'
   | 'biometrics_completed_date'
   | 'date_approved'
@@ -17,6 +19,7 @@ type SortKey =
   | 'date_card_received'
   | 'days_to_approval'
   | 'days_to_card'
+  | 'service_center'
   | 'country_of_citizenship'
   | 'created_utc'
 type SortDir = 'asc' | 'desc'
@@ -29,6 +32,8 @@ function exportCSV(records: TimelineRecord[]) {
     days_to_approval: r.days_to_approval ?? '',
     days_to_card: r.days_to_card ?? '',
     premium_processing: r.premium_processing,
+    pp_upgraded: r.pp_upgraded,
+    pp_upgrade_date: r.pp_upgrade_date ?? '',
     date_approved: r.date_approved ?? '',
     date_card_received: r.date_card_received ?? '',
     country_of_citizenship: r.country_of_citizenship ?? '',
@@ -135,14 +140,17 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
             <tr style={{ borderBottom: '1px solid var(--hairline)' }}>
               <Th col="normalized_type" label="Type" />
               <Th col="premium_processing" label="Premium" />
+              <Th col="pp_upgrade_date" label="PP Upgraded" />
               <Th col="date_applied" label="Applied" />
               <Th col="biometrics_requested_date" label="Bio Requested" />
               <Th col="biometrics_completed_date" label="Bio Completed" />
               <Th col="date_approved" label="Approved" />
               <Th col="date_card_produced" label="Card Produced" />
               <Th col="date_card_received" label="Card Received" />
+              <Th col="employment_start_date" label="OPT Start" />
               <Th col="days_to_approval" label="Days → Approval" />
               <Th col="days_to_card" label="Days → Card" />
+              <Th col="service_center" label="Service Ctr" />
               <Th col="country_of_citizenship" label="Citizenship" />
               <Th col="created_utc" label="Posted" />
               <th
@@ -185,6 +193,9 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
                   )}
                 </td>
                 <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                  {r.pp_upgrade_date ? formatDate(r.pp_upgrade_date) : '—'}
+                </td>
+                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
                   {formatDate(r.date_applied)}
                 </td>
                 <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
@@ -202,11 +213,17 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
                 <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
                   {formatDate(r.date_card_received)}
                 </td>
+                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                  {formatDate(r.employment_start_date)}
+                </td>
                 <td className="px-4 py-3 text-sm font-medium" style={{ color: 'var(--ink)' }}>
                   {r.days_to_approval != null ? `${r.days_to_approval}d` : '—'}
                 </td>
                 <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
                   {r.days_to_card != null ? `${r.days_to_card}d` : '—'}
+                </td>
+                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                  {r.service_center ?? '—'}
                 </td>
                 <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
                   {r.country_of_citizenship ?? '—'}
@@ -234,7 +251,7 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
             {pageData.length === 0 && (
               <tr>
                 <td
-                  colSpan={13}
+                  colSpan={16}
                   className="px-4 py-12 text-center text-sm"
                   style={{ color: 'var(--mute)' }}
                 >

@@ -17,6 +17,20 @@ from .fetcher import fetch_all_comments
 from .parser import parse_comment, compute_derived, has_template_data
 from .exporter import dedupe_by_author_date, load_existing, merge, save
 
+# Date fields that must not be in the future. We use a single "today" snapshot
+# captured at scrape start so a long run doesn't produce inconsistent results
+# across the boundary of midnight UTC.
+_FUTURE_NULLABLE_FIELDS = (
+    "date_approved",
+    "date_card_produced",
+    "date_card_shipped",
+    "date_card_received",
+    "rfie_date",
+    "biometrics_requested_date",
+    "biometrics_completed_date",
+    "pp_upgrade_date",
+)
+
 console = Console()
 
 _SKIP_AUTHORS = frozenset({"automoderator", "[deleted]", "opttracker_bot"})
@@ -30,23 +44,26 @@ def _build_record(comment: dict, thread: dict) -> dict | None:
     if not body or body in _SKIP_BODIES or author.lower() in _SKIP_AUTHORS:
         return None
 
-    parsed = parse_comment(body)
-    if not has_template_data(parsed):
-        return None
-
     created_dt = datetime.fromtimestamp(
         comment.get("created_utc", 0), tz=timezone.utc
-    ).isoformat()
+    )
+    thread_year = thread.get("year")
+
+    parsed = parse_comment(body, thread_year=thread_year, created_utc=created_dt)
+    if not has_template_data(parsed):
+        return None
 
     record = {
         "comment_id": comment["id"],
         "author": author,
-        "created_utc": created_dt,
+        "created_utc": created_dt.isoformat(),
         "subreddit": thread["subreddit"],
         "permalink": f"https://reddit.com{comment.get('permalink', '')}",
         **parsed,
         "raw_text": body,
     }
+    today_iso = date.today().isoformat()
+
     # Null out dates that are logically impossible (year typos)
     date_applied = record.get("date_applied")
     if date_applied:
@@ -57,10 +74,16 @@ def _build_record(comment: dict, thread: dict) -> dict | None:
             if record.get(field) and record[field] < date_applied:
                 record[field] = None
 
+    # Null out future-dated downstream fields — these can't have happened yet.
+    for field in _FUTURE_NULLABLE_FIELDS:
+        v = record.get(field)
+        if v and v > today_iso:
+            record[field] = None
+
     record = compute_derived(record)
 
     # Drop records where date_applied is in the future — likely a typo
-    if date_applied and date_applied > date.today().isoformat():
+    if date_applied and date_applied > today_iso:
         return None
 
     return record

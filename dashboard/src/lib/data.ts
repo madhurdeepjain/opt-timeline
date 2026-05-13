@@ -1,5 +1,5 @@
 import type { TimelineRecord, FilterState, DashboardStats, SurvivalPoint, FunnelStage, MilestonePoint, CountryBreakdown } from './types'
-import { CITIZENSHIP_UNSPECIFIED } from './types'
+import { CITIZENSHIP_UNSPECIFIED, SERVICE_CENTER_UNSPECIFIED } from './types'
 import { median, toYearMonth, daysBetween } from './utils'
 
 function postIdFromPermalink(permalink: string): string {
@@ -11,7 +11,8 @@ export function applyFilters(records: TimelineRecord[], filters: FilterState): T
     if (filters.type === 'OPT' && r.normalized_type !== 'OPT') return false
     if (filters.type === 'STEM' && r.normalized_type !== 'STEM') return false
     if (filters.type === 'unknown' && (r.normalized_type === 'OPT' || r.normalized_type === 'STEM')) return false
-    if (filters.premium === 'premium' && r.premium_processing !== true) return false
+    if (filters.premium === 'premium' && !(r.premium_processing === true && r.pp_upgraded !== true)) return false
+    if (filters.premium === 'upgraded' && r.pp_upgraded !== true) return false
     if (filters.premium === 'standard' && r.premium_processing !== false) return false
     if (filters.premium === 'unknown' && r.premium_processing !== null) return false
     if (filters.approved === 'yes' && !r.date_approved) return false
@@ -34,6 +35,10 @@ export function applyFilters(records: TimelineRecord[], filters: FilterState): T
     if (filters.citizenship.length > 0) {
       const value = r.country_of_citizenship ?? CITIZENSHIP_UNSPECIFIED
       if (!filters.citizenship.includes(value)) return false
+    }
+    if (filters.serviceCenter.length > 0) {
+      const sc = r.service_center ?? SERVICE_CENTER_UNSPECIFIED
+      if (!filters.serviceCenter.includes(sc)) return false
     }
     if (filters.threads.length > 0 && !filters.threads.includes(postIdFromPermalink(r.permalink))) return false
     if (filters.appliedDateFrom || filters.appliedDateTo) {
