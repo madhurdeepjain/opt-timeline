@@ -116,7 +116,7 @@ export default function PersonalTimeline() {
                     left: '50%',
                     transform: 'translateX(-50%)',
                     backgroundColor: event.premium ? 'var(--primary-pressed)' : 'var(--ink)',
-                    color: event.premium ? 'var(--ink)' : '#fff',
+                    color: event.premium ? 'var(--ink)' : 'var(--on-ink)',
                     zIndex: 2,
                   }}
                 >
@@ -185,7 +185,7 @@ export default function PersonalTimeline() {
                   className="w-6 h-6 rounded-full flex items-center justify-center"
                   style={{
                     backgroundColor: event.premium ? 'var(--primary-pressed)' : 'var(--ink)',
-                    color: event.premium ? 'var(--ink)' : '#fff',
+                    color: event.premium ? 'var(--ink)' : 'var(--on-ink)',
                   }}
                 >
                   <Check size={11} strokeWidth={2.5} />

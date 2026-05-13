@@ -281,7 +281,7 @@ function Wizard({
               className="px-4 py-2 rounded-full text-sm font-medium cursor-pointer transition-colors"
               style={{
                 backgroundColor: pval === opt.value ? 'var(--ink)' : 'var(--surface-soft)',
-                color: pval === opt.value ? '#fff' : 'var(--body)',
+                color: pval === opt.value ? 'var(--on-ink)' : 'var(--body)',
               }}
             >
               {opt.label}
@@ -307,7 +307,7 @@ function Wizard({
               onClick={handleDateNext}
               disabled={!dateInput}
               className="px-4 py-1.5 rounded-full text-sm font-medium cursor-pointer disabled:opacity-40 disabled:cursor-default transition-colors"
-              style={{ backgroundColor: 'var(--ink)', color: '#fff' }}
+              style={{ backgroundColor: 'var(--ink)', color: 'var(--on-ink)' }}
             >
               Next →
             </button>
@@ -422,7 +422,7 @@ export default function UserJourney() {
           <button
             onClick={handleStart}
             className="px-4 py-2 rounded-full text-sm font-medium cursor-pointer transition-colors"
-            style={{ backgroundColor: 'var(--ink)', color: '#fff' }}
+            style={{ backgroundColor: 'var(--ink)', color: 'var(--on-ink)' }}
           >
             Get started →
           </button>
@@ -536,7 +536,7 @@ export default function UserJourney() {
                             left: '50%',
                             transform: 'translateX(-50%)',
                             backgroundColor: 'var(--ink)',
-                            color: '#fff',
+                            color: 'var(--on-ink)',
                             zIndex: 2,
                           }}
                         >
@@ -590,7 +590,7 @@ export default function UserJourney() {
                       <div className="flex flex-col items-center flex-shrink-0">
                         <div
                           className="w-6 h-6 rounded-full flex items-center justify-center"
-                          style={{ backgroundColor: 'var(--ink)', color: '#fff' }}
+                          style={{ backgroundColor: 'var(--ink)', color: 'var(--on-ink)' }}
                         >
                           <Check size={11} strokeWidth={2.5} />
                         </div>

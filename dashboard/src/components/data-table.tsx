@@ -264,7 +264,7 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
                 className="px-2 py-0.5 rounded text-xs font-medium cursor-pointer transition-colors"
                 style={{
                   backgroundColor: pageSize === n ? 'var(--ink)' : 'var(--surface-soft)',
-                  color: pageSize === n ? '#fff' : 'var(--mute)',
+                  color: pageSize === n ? 'var(--on-ink)' : 'var(--mute)',
                 }}
               >
                 {n}

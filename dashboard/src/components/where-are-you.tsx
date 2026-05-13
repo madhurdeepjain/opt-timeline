@@ -53,7 +53,7 @@ function Pill({ active, onClick, children }: { active: boolean; onClick: () => v
       className="px-3 py-1 rounded-full text-[12px] font-medium cursor-pointer transition-colors"
       style={{
         backgroundColor: active ? 'var(--ink)' : 'var(--surface-soft)',
-        color: active ? '#fff' : 'var(--body)',
+        color: active ? 'var(--on-ink)' : 'var(--body)',
       }}
     >
       {children}
@@ -171,7 +171,7 @@ export default function WhereAreYouCard({ records }: { records: TimelineRecord[]
               className="px-3 py-1 rounded-full text-[12px] font-medium cursor-pointer transition-colors"
               style={{
                 backgroundColor: tab === t ? 'var(--ink)' : 'transparent',
-                color: tab === t ? '#fff' : 'var(--mute)',
+                color: tab === t ? 'var(--on-ink)' : 'var(--mute)',
               }}
             >
               {t === 'position' ? 'Your position' : 'Approval curve'}

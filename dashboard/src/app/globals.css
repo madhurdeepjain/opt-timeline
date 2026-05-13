@@ -9,12 +9,30 @@
   --primary: #f7a501;
   --primary-pressed: #dd9001;
   --ink: #23251d;
+  --on-ink: #ffffff;
   --body: #4d4f46;
   --charcoal: #33342d;
   --mute: #6c6e63;
   --ash: #9b9c92;
   --hairline: #bfc1b7;
   --hairline-soft: #dcdfd2;
+}
+
+[data-theme="dark"] {
+  --canvas: #1a1b15;
+  --surface-card: #23251d;
+  --surface-soft: #2e302a;
+  --surface-dark: #131410;
+  --primary: #f7a501;
+  --primary-pressed: #dd9001;
+  --ink: #f0f0eb;
+  --on-ink: #1a1b15;
+  --body: #c8c9c2;
+  --charcoal: #d8d9d2;
+  --mute: #888981;
+  --ash: #5a5c55;
+  --hairline: #3a3c34;
+  --hairline-soft: #2a2c25;
 }
 
 body {

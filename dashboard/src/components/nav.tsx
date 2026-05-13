@@ -1,3 +1,5 @@
+import ThemeToggle from './theme-toggle'
+
 function Logo() {
   return (
     <svg width="28" height="28" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -66,6 +68,7 @@ export default function Nav({ lastUpdated }: { lastUpdated: string | null }) {
           >
             <GitHubIcon />
           </a>
+          <ThemeToggle />
         </div>
       </div>
     </nav>

@@ -98,7 +98,7 @@ function PillTab({
       )}
       style={
         active
-          ? { backgroundColor: 'var(--ink)', color: '#fff', borderColor: 'transparent' }
+          ? { backgroundColor: 'var(--ink)', color: 'var(--on-ink)', borderColor: 'transparent' }
           : { backgroundColor: 'transparent', color: 'var(--body)', borderColor: 'transparent' }
       }
     >
@@ -147,7 +147,7 @@ function PillGroupDropdown<T extends string>({
         className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors"
         style={{
           backgroundColor: active ? 'var(--ink)' : 'var(--surface-soft)',
-          color: active ? '#fff' : 'var(--body)',
+          color: active ? 'var(--on-ink)' : 'var(--body)',
         }}
       >
         {currentLabel}
@@ -233,7 +233,7 @@ function CitizenshipDropdown({
         className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors"
         style={{
           backgroundColor: selected.length > 0 ? 'var(--ink)' : 'var(--surface-soft)',
-          color: selected.length > 0 ? '#fff' : 'var(--body)',
+          color: selected.length > 0 ? 'var(--on-ink)' : 'var(--body)',
         }}
       >
         {label}
@@ -338,7 +338,7 @@ function TernaryDropdown({
         className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors"
         style={{
           backgroundColor: active ? 'var(--ink)' : 'var(--surface-soft)',
-          color: active ? '#fff' : 'var(--body)',
+          color: active ? 'var(--on-ink)' : 'var(--body)',
         }}
       >
         {triggerLabel}
@@ -422,7 +422,7 @@ function CardStatusDropdown({
         className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors"
         style={{
           backgroundColor: selected.length > 0 ? 'var(--ink)' : 'var(--surface-soft)',
-          color: selected.length > 0 ? '#fff' : 'var(--body)',
+          color: selected.length > 0 ? 'var(--on-ink)' : 'var(--body)',
         }}
       >
         {label}
@@ -524,7 +524,7 @@ function BanStatusDropdown({
         className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors"
         style={{
           backgroundColor: selected.length > 0 ? 'var(--ink)' : 'var(--surface-soft)',
-          color: selected.length > 0 ? '#fff' : 'var(--body)',
+          color: selected.length > 0 ? 'var(--on-ink)' : 'var(--body)',
         }}
       >
         {label}
@@ -644,7 +644,7 @@ function ThreadFilter({
             position: 'relative',
             zIndex: 1,
             backgroundColor: selected.length > 0 ? 'var(--ink)' : 'var(--surface-soft)',
-            color: selected.length > 0 ? '#fff' : 'var(--body)',
+            color: selected.length > 0 ? 'var(--on-ink)' : 'var(--body)',
           }}
         >
           {label}
@@ -881,7 +881,7 @@ function AppliedDateFilter({
         className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors"
         style={{
           backgroundColor: hasFilter ? 'var(--ink)' : 'var(--surface-soft)',
-          color: hasFilter ? '#fff' : 'var(--body)',
+          color: hasFilter ? 'var(--on-ink)' : 'var(--body)',
         }}
       >
         {label}
@@ -1213,7 +1213,7 @@ function ClearFiltersButton({ onClear }: { onClear: () => void }) {
           className="absolute top-full right-0 mt-2 px-3 py-2 rounded-md text-[11px] leading-snug whitespace-nowrap pointer-events-none z-50"
           style={{
             backgroundColor: 'var(--ink)',
-            color: '#fff',
+            color: 'var(--on-ink)',
             boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
           }}
         >
