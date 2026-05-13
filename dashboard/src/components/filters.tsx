@@ -60,7 +60,7 @@ interface FiltersProps {
   onClear: () => void
   total: number
   citizenshipOptions: CitizenshipOptions
-  serviceCenterOptions: ServiceCenterOptions[]
+  serviceCenterOptions: ServiceCenterOptions
   banStatusCounts: BanStatusCounts
   cardStatusCounts: CardStatusCounts
   ternaryCounts: TernaryCounts
