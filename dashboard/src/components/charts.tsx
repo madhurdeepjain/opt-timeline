@@ -14,7 +14,7 @@ import {
 } from 'recharts'
 import { formatYearMonth } from '@/lib/utils'
 
-const OPT_COLOR = '#23251d'
+const OPT_COLOR = '#5b9bd5'
 const STEM_COLOR = '#f7a501'
 
 export function ChartCard({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
@@ -43,6 +43,9 @@ interface HistogramDatum {
 }
 
 export function ProcessingTimeChart({ data }: { data: HistogramDatum[] }) {
+  const hasOPT = data.some((d) => d.OPT > 0)
+  const hasSTEM = data.some((d) => d.STEM > 0)
+
   return (
     <ChartCard title="Processing Time Distribution" sub="Days to Approval">
       <ResponsiveContainer width="100%" height={220}>
@@ -58,6 +61,7 @@ export function ProcessingTimeChart({ data }: { data: HistogramDatum[] }) {
             axisLine={false}
             tickLine={false}
             width={28}
+            domain={[0, 'auto']}
           />
           <Tooltip
             contentStyle={{
@@ -72,8 +76,8 @@ export function ProcessingTimeChart({ data }: { data: HistogramDatum[] }) {
           <Legend
             wrapperStyle={{ fontSize: '12px', color: 'var(--mute)', paddingTop: '8px' }}
           />
-          <Bar dataKey="OPT" fill={OPT_COLOR} radius={[3, 3, 0, 0]} />
-          <Bar dataKey="STEM" fill={STEM_COLOR} radius={[3, 3, 0, 0]} />
+          {hasOPT && <Bar dataKey="OPT" fill={OPT_COLOR} radius={[3, 3, 0, 0]} />}
+          {hasSTEM && <Bar dataKey="STEM" fill={STEM_COLOR} radius={[3, 3, 0, 0]} />}
         </BarChart>
       </ResponsiveContainer>
     </ChartCard>
@@ -109,6 +113,7 @@ export function MonthlyTrendChart({ data }: { data: TrendDatum[] }) {
             axisLine={false}
             tickLine={false}
             width={28}
+            domain={[0, 'auto']}
           />
           <Tooltip
             contentStyle={{

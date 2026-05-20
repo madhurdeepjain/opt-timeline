@@ -50,7 +50,7 @@ export default function StatsCards({ stats }: { stats: DashboardStats }) {
         icon={<Users size={14} />}
         label="Total Records"
         value={stats.total.toLocaleString()}
-        sub={`${stats.optCount} OPT · ${stats.stemCount} STEM`}
+        sub={[stats.optCount > 0 && `${stats.optCount} OPT`, stats.stemCount > 0 && `${stats.stemCount} STEM`].filter(Boolean).join(' · ')}
       />
       <Card
         icon={<Clock size={14} />}

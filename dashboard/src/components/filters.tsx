@@ -1197,15 +1197,21 @@ export default function Filters({ filters, onChange, onClear, total, citizenship
         <PillTab active={filters.type === 'all'} onClick={() => onChange({ ...filters, type: 'all' })}>
           All types
         </PillTab>
-        <PillTab active={filters.type === 'OPT'} onClick={() => onChange({ ...filters, type: 'OPT' })} count={pillCounts.type.OPT}>
-          OPT
-        </PillTab>
-        <PillTab active={filters.type === 'STEM'} onClick={() => onChange({ ...filters, type: 'STEM' })} count={pillCounts.type.STEM}>
-          STEM OPT
-        </PillTab>
-        <PillTab active={filters.type === 'unknown'} onClick={() => onChange({ ...filters, type: 'unknown' })} count={pillCounts.type.unknown}>
-          Unknown
-        </PillTab>
+        {(pillCounts.type.OPT > 0 || filters.type === 'OPT') && (
+          <PillTab active={filters.type === 'OPT'} onClick={() => onChange({ ...filters, type: 'OPT' })} count={pillCounts.type.OPT}>
+            OPT
+          </PillTab>
+        )}
+        {(pillCounts.type.STEM > 0 || filters.type === 'STEM') && (
+          <PillTab active={filters.type === 'STEM'} onClick={() => onChange({ ...filters, type: 'STEM' })} count={pillCounts.type.STEM}>
+            STEM OPT
+          </PillTab>
+        )}
+        {(pillCounts.type.unknown > 0 || filters.type === 'unknown') && (
+          <PillTab active={filters.type === 'unknown'} onClick={() => onChange({ ...filters, type: 'unknown' })} count={pillCounts.type.unknown}>
+            Unknown
+          </PillTab>
+        )}
       </div>
 
       <PillGroupDropdown<FilterState['premium']>
