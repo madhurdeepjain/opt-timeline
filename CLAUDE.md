@@ -8,10 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cd scraper
 uv sync                        # install dependencies
-uv run scrape                  # fetch all threads → dashboard/data/timeline.csv
-uv run scrape --no-merge       # overwrite instead of merging
+uv run scrape                  # fetch all threads → Supabase (or CSV if no Supabase env)
+uv run scrape --csv            # force CSV output even when Supabase env is set
+uv run scrape --no-merge       # ignore existing records; treat this run as the full set
 uv run scrape -v               # verbose: print each matched record
-uv run scrape -o /custom/path  # write to a different path
+uv run scrape --seed-from PATH # load existing from a CSV (one-time Supabase migration seed)
 ```
 
 **Dashboard** (Next.js):
@@ -32,17 +33,26 @@ dashboard/ → Next.js 16 App Router, single-page client component
 
 ### Data pipeline
 
-1. `uv run scrape` fetches Reddit threads via their public `.json` endpoints, parses template-style comments, merges with any existing CSV, and writes to `dashboard/data/timeline.csv` + `dashboard/data/meta.json`. The default output path is hardcoded in `scraper/src/reddit_opt_scraper/config.py` to point directly into `dashboard/data/`.
-2. The Next.js API routes (`/api/data`, `/api/meta`) read those files from disk and serve them with 1-hour cache revalidation.
-3. `dashboard/src/app/page.tsx` is a `'use client'` component that fetches the CSV on mount, parses it with PapaParse, and holds the full record set in state. **All filtering is client-side.**
+1. `uv run scrape` fetches Reddit threads via their public `.json` endpoints, parses template-style comments, merges with existing records, dedupes, and **upserts to Supabase** (`timeline` + `meta` tables). Falls back to CSV (`dashboard/data/`) only when Supabase env vars are absent or `--csv` is passed.
+2. `dashboard/src/app/page.tsx` (`'use client'`) reads `timeline` + `meta` **directly from Supabase** via the publishable key (`lib/supabase.ts`, paginated past PostgREST's 1000-row cap) on mount and holds the full record set in state. **All filtering is client-side.**
+
+### Storage / Supabase
+
+- Schema + RLS in `supabase/migrations/` (applied with `supabase link` then `supabase db push`). RLS = public read-only; writes need the secret key (bypasses RLS).
+- **Key model (2025+):** dashboard uses the *publishable* key (`sb_publishable_…`, browser-safe); scraper uses the *secret* key (`sb_secret_…`, env/CI only). These replaced the legacy `anon`/`service_role` keys.
+- Stale-row handling: every upsert stamps `updated_at = run_start`; rows older than that after a run (dropped by dedupe) are deleted — reproducing the CSV "whole-file rewrite".
+- Env: scraper reads `scraper/.env` (`SUPABASE_URL`, `SUPABASE_SECRET_KEY`); dashboard reads `dashboard/.env.local` (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`). `.example` files document both.
+- `.github/workflows/update-data.yml` runs the scraper on a daily cron → Supabase (no commits).
+- One-time migration seed: `uv run scrape --seed-from dashboard/data/timeline.csv`.
 
 ### Scraper internals (`scraper/src/reddit_opt_scraper/`)
 
 - `config.py` — thread list (Reddit post IDs), CSV field order, rate-limit delay (6 s/req)
 - `fetcher.py` — paginates Reddit's `.json` API with `after` cursor
 - `parser.py` — regex-based extraction of template fields from freeform comment text; the most fragile part — handles date normalization, null sentinels, and DD/MM/YYYY ambiguity
-- `exporter.py` — deduplication (by `author + date_applied`), merge with existing CSV
-- `main.py` — Click CLI wiring everything together; also writes `meta.json` with `scraped_at` timestamp
+- `exporter.py` — CSV load/save, deduplication (by `author + date_applied`), `merge` (fresh replaces existing by `comment_id`)
+- `supastore.py` — Supabase backend: paginated `load_existing`, batched upsert `save` + stale-row delete, `save_meta`
+- `main.py` — Click CLI; loads `.env`, picks Supabase vs CSV backend, wires fetch → merge → dedupe → save
 
 ### Dashboard internals (`dashboard/src/`)
 

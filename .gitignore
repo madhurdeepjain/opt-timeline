@@ -36,5 +36,7 @@ Thumbs.db
 .env.*.local
 
 # Data
-# Scraper output dir — only dashboard/data/timeline.csv is committed
+# Storage is Supabase now — the scraper no longer commits CSV/JSON.
+# These remain on disk locally (seed source / CSV-mode debugging) but untracked.
 scraper/out/
+dashboard/data/

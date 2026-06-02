@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import Papa from 'papaparse'
 import type { TimelineRecord, FilterState } from '@/lib/types'
 import { CITIZENSHIP_UNSPECIFIED, SERVICE_CENTER_UNSPECIFIED, DEFAULT_FILTERS } from '@/lib/types'
 import { applyFilters, computeStats, buildHistogramData, buildMonthlyTrendData } from '@/lib/data'
 import { formatDate } from '@/lib/utils'
+import { fetchAllTimeline, fetchMeta } from '@/lib/supabase'
 
 import Nav from '@/components/nav'
 import UserJourney from '@/components/user-journey'
@@ -20,51 +20,50 @@ import StageFunnel from '@/components/stage-funnel'
 import MilestoneBreakdown from '@/components/milestone-breakdown'
 import CountryBreakdown from '@/components/country-breakdown'
 
-function parseBool(v: string): boolean | null {
-  if (v === 'true') return true
-  if (v === 'false') return false
-  return null
+// Supabase returns typed JSON (real booleans, numbers, and 'YYYY-MM-DD' date
+// strings or null), so these coercions just narrow/normalize rather than parse.
+function asStr(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() !== '' ? v.trim() : null
 }
 
-function parseNum(v: string): number | null {
-  const n = parseInt(v, 10)
-  return isNaN(n) ? null : n
+function asBool(v: unknown): boolean | null {
+  return typeof v === 'boolean' ? v : null
 }
 
-function parseStr(v: string): string | null {
-  return v && v.trim() !== '' ? v.trim() : null
+function asNum(v: unknown): number | null {
+  return typeof v === 'number' && !isNaN(v) ? v : null
 }
 
-function mapRow(row: Record<string, string>): TimelineRecord {
+function mapRow(row: Record<string, unknown>): TimelineRecord {
   return {
-    comment_id: row.comment_id ?? '',
-    author: row.author ?? '',
-    created_utc: row.created_utc ?? '',
-    subreddit: row.subreddit ?? '',
-    permalink: row.permalink ?? '',
-    type: row.type ?? '',
-    normalized_type: row.normalized_type ?? '',
-    premium_processing: parseBool(row.premium_processing),
-    pp_upgraded: parseBool(row.pp_upgraded),
-    pp_upgrade_date: parseStr(row.pp_upgrade_date),
-    date_applied: parseStr(row.date_applied),
-    employment_start_date: parseStr(row.employment_start_date),
-    rfie_date: parseStr(row.rfie_date),
-    biometrics_requested_date: parseStr(row.biometrics_requested_date),
-    biometrics_completed_date: parseStr(row.biometrics_completed_date),
-    biometrics_location: parseStr(row.biometrics_location),
-    noid: parseBool(row.noid),
-    noid_date: parseStr(row.noid_date),
-    date_approved: parseStr(row.date_approved),
-    date_card_produced: parseStr(row.date_card_produced),
-    date_card_shipped: parseStr(row.date_card_shipped),
-    date_card_received: parseStr(row.date_card_received),
-    country_of_citizenship: parseStr(row.country_of_citizenship),
+    comment_id: String(row.comment_id ?? ''),
+    author: String(row.author ?? ''),
+    created_utc: String(row.created_utc ?? ''),
+    subreddit: String(row.subreddit ?? ''),
+    permalink: String(row.permalink ?? ''),
+    type: String(row.type ?? ''),
+    normalized_type: String(row.normalized_type ?? ''),
+    premium_processing: asBool(row.premium_processing),
+    pp_upgraded: asBool(row.pp_upgraded),
+    pp_upgrade_date: asStr(row.pp_upgrade_date),
+    date_applied: asStr(row.date_applied),
+    employment_start_date: asStr(row.employment_start_date),
+    rfie_date: asStr(row.rfie_date),
+    biometrics_requested_date: asStr(row.biometrics_requested_date),
+    biometrics_completed_date: asStr(row.biometrics_completed_date),
+    biometrics_location: asStr(row.biometrics_location),
+    noid: asBool(row.noid),
+    noid_date: asStr(row.noid_date),
+    date_approved: asStr(row.date_approved),
+    date_card_produced: asStr(row.date_card_produced),
+    date_card_shipped: asStr(row.date_card_shipped),
+    date_card_received: asStr(row.date_card_received),
+    country_of_citizenship: asStr(row.country_of_citizenship),
     ban_status: (row.ban_status === 'restricted' || row.ban_status === 'non_restricted') ? row.ban_status : null,
-    service_center: parseStr(row.service_center),
-    days_to_approval: parseNum(row.days_to_approval),
-    days_to_card: parseNum(row.days_to_card),
-    raw_text: row.raw_text ?? '',
+    service_center: asStr(row.service_center),
+    days_to_approval: asNum(row.days_to_approval),
+    days_to_card: asNum(row.days_to_card),
+    raw_text: String(row.raw_text ?? ''),
   }
 }
 
@@ -105,11 +104,8 @@ export default function Home() {
   }
 
   useEffect(() => {
-    const base = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
-
-    fetch(`${base}/api/meta`)
-      .then((r) => r.json())
-      .then(({ scraped_at }: { scraped_at: string | null }) => {
+    fetchMeta()
+      .then(({ scraped_at }) => {
         if (scraped_at) {
           const d = new Date(scraped_at)
           const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -124,21 +120,13 @@ export default function Home() {
       })
       .catch(() => {})
 
-    fetch(`${base}/api/data`, { cache: 'no-store' })
-      .then((r) => {
-        if (!r.ok) throw new Error(`Failed to load data (${r.status})`)
-        return r.text()
-      })
-      .then((text) => {
-        const result = Papa.parse<Record<string, string>>(text, {
-          header: true,
-          skipEmptyLines: true,
-        })
-        setRecords(result.data.map(mapRow))
+    fetchAllTimeline()
+      .then((rows) => {
+        setRecords(rows.map(mapRow))
         setLoading(false)
       })
       .catch((e) => {
-        setError(e.message)
+        setError(e instanceof Error ? e.message : 'Failed to load data')
         setLoading(false)
       })
   }, [])
