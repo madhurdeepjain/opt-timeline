@@ -11,6 +11,7 @@ run (collapsed by dedupe). This reproduces the CSV backend's whole-file rewrite.
 """
 
 import os
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -21,7 +22,32 @@ from .exporter import _rehabilitate
 TABLE = "timeline"
 META_TABLE = "meta"
 _PAGE = 1000          # PostgREST default max rows per response
-_UPSERT_BATCH = 500
+# Keep request bodies modest: large TLS records have tripped "bad record mac"
+# read errors through some networks/proxies. 100 rows/upsert is comfortably small.
+_UPSERT_BATCH = 100
+_WRITE_RETRIES = 5
+
+
+def _send_write(method: str, url: str, *, headers: dict, params: dict, json=None) -> None:
+    """Send a write request, retrying transient transport/TLS errors.
+
+    Each attempt opens a fresh connection — a corrupted keep-alive connection is
+    a common cause of the SSL "bad record mac" failures seen on large upserts.
+    HTTP error statuses (4xx/5xx) are not transient and raise immediately.
+    """
+    last: Exception | None = None
+    for attempt in range(_WRITE_RETRIES):
+        try:
+            with httpx.Client(timeout=60.0) as client:
+                resp = client.request(method, url, headers=headers, params=params, json=json)
+            resp.raise_for_status()
+            return
+        except httpx.TransportError as e:  # ReadError (SSL) / ConnectError / WriteError / ProtocolError
+            last = e
+            wait = 2 * (attempt + 1)
+            print(f"  [supabase] {type(e).__name__} — retry {attempt + 1}/{_WRITE_RETRIES} in {wait}s", flush=True)
+            time.sleep(wait)
+    raise RuntimeError(f"Supabase write failed after {_WRITE_RETRIES} retries: {last}")
 
 
 def supabase_config() -> tuple[str | None, str | None]:
@@ -93,35 +119,32 @@ def save(records: list[dict], url: str, key: str) -> None:
     run_start = datetime.now(tz=timezone.utc).isoformat()
     rows = [_to_db_row(r, run_start) for r in records if r.get("comment_id")]
 
-    with httpx.Client(timeout=60.0) as client:
-        for i in range(0, len(rows), _UPSERT_BATCH):
-            batch = rows[i : i + _UPSERT_BATCH]
-            resp = client.post(
-                f"{url}/rest/v1/{TABLE}",
-                headers=_headers(key, write=True),
-                params={"on_conflict": "comment_id"},
-                json=batch,
-            )
-            resp.raise_for_status()
-
-        # Delete stale rows: anything not re-stamped with this run's timestamp.
-        resp = client.delete(
+    for i in range(0, len(rows), _UPSERT_BATCH):
+        _send_write(
+            "POST",
             f"{url}/rest/v1/{TABLE}",
-            headers=_headers(key),
-            params={"updated_at": f"lt.{run_start}"},
+            headers=_headers(key, write=True),
+            params={"on_conflict": "comment_id"},
+            json=rows[i : i + _UPSERT_BATCH],
         )
-        resp.raise_for_status()
+
+    # Delete stale rows: anything not re-stamped with this run's timestamp.
+    _send_write(
+        "DELETE",
+        f"{url}/rest/v1/{TABLE}",
+        headers=_headers(key),
+        params={"updated_at": f"lt.{run_start}"},
+    )
 
     save_meta(url, key, run_start)
 
 
 def save_meta(url: str, key: str, scraped_at: str) -> None:
     """Upsert the single meta row with the scrape timestamp."""
-    with httpx.Client(timeout=30.0) as client:
-        resp = client.post(
-            f"{url}/rest/v1/{META_TABLE}",
-            headers=_headers(key, write=True),
-            params={"on_conflict": "id"},
-            json=[{"id": 1, "scraped_at": scraped_at}],
-        )
-        resp.raise_for_status()
+    _send_write(
+        "POST",
+        f"{url}/rest/v1/{META_TABLE}",
+        headers=_headers(key, write=True),
+        params={"on_conflict": "id"},
+        json=[{"id": 1, "scraped_at": scraped_at}],
+    )
