@@ -1,6 +1,7 @@
 """CLI entry-point: `uv run scrape`"""
 
 import json
+import sys
 import time
 import traceback
 from datetime import date, datetime, timezone
@@ -100,8 +101,9 @@ def _build_record(comment: dict, thread: dict) -> dict | None:
 @click.option("--no-merge", is_flag=True, default=False, help="Overwrite instead of merging with existing records")
 @click.option("--csv", "force_csv", is_flag=True, default=False, help="Write to CSV even if Supabase env vars are set")
 @click.option("--seed-from", "seed_from", default=None, help="Load existing records from this CSV instead of the active store (one-time Supabase migration seed)")
+@click.option("--yes", "-y", "assume_yes", is_flag=True, default=False, help="Skip the confirmation prompt before writing to Supabase")
 @click.option("--verbose", "-v", is_flag=True, default=False)
-def cli(output: str, no_merge: bool, force_csv: bool, seed_from: str | None, verbose: bool) -> None:
+def cli(output: str, no_merge: bool, force_csv: bool, seed_from: str | None, assume_yes: bool, verbose: bool) -> None:
     """Scrape OPT/STEM OPT processing timelines and save to Supabase or CSV."""
     out_path = Path(output)
     sb_url, sb_key = supastore.supabase_config()
@@ -179,6 +181,20 @@ def cli(output: str, no_merge: bool, force_csv: bool, seed_from: str | None, ver
     console.print(tbl)
 
     if use_supabase:
+        # Show what this run will change, then confirm before writing.
+        final_ids = {r.get("comment_id") for r in final}
+        new = sum(1 for cid in final_ids if cid not in existing)
+        stale = sum(1 for cid in existing if cid not in final_ids)
+        console.print(
+            f"\nSupabase changes: [green]+{new} new[/green], "
+            f"{len(final_ids) - new} existing kept, "
+            f"[red]-{stale} stale removed[/red]"
+        )
+        # Auto-proceed when non-interactive (CI) or --yes; otherwise prompt.
+        if not assume_yes and sys.stdin.isatty():
+            if not click.confirm("Write these changes to Supabase?", default=False):
+                console.print("[yellow]Aborted — nothing written to Supabase.[/yellow]")
+                return
         supastore.save(final, sb_url, sb_key)
         console.print(f"\n[bold green]✓ Upserted {len(final)} records → Supabase[/bold green]")
     else:

@@ -30,4 +30,4 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           uv sync
-          uv run scrape
+          uv run scrape --yes
