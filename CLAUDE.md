@@ -33,8 +33,10 @@ dashboard/ → Next.js 16 App Router, single-page client component
 
 ### Data pipeline
 
-1. `uv run scrape` fetches Reddit threads via their public `.json` endpoints, parses template-style comments, merges with existing records, dedupes, and **upserts to Supabase** (`timeline` + `meta` tables). Falls back to CSV (`dashboard/data/`) only when Supabase env vars are absent or `--csv` is passed.
+1. `uv run scrape` fetches each thread's top-level comments from **Arctic Shift** (`arctic-shift.photon-reddit.com`), parses template-style comments, merges with existing records, dedupes, and **upserts to Supabase** (`timeline` + `meta` tables). Falls back to CSV (`dashboard/data/`) only when Supabase env vars are absent or `--csv` is passed. Reddit's public `.json` endpoints now 403 all unauthenticated traffic, which is why anonymous direct fetching no longer works.
 2. `dashboard/src/app/page.tsx` (`'use client'`) reads `timeline` + `meta` **directly from Supabase** via the publishable key (`lib/supabase.ts`, paginated past PostgREST's 1000-row cap) on mount and holds the full record set in state. **All filtering is client-side.**
+
+**Source caveat / merge policy:** Arctic Shift snapshots a comment ~once at post-time and never re-ingests edits, so it returns the original body even after an author edits in an approval. The scraper therefore treats Arctic data as **add-only** — `merge` inserts only brand-new `comment_id`s and never modifies an existing row (which may hold newer, edit-captured values from the seed). Capturing edited-in approvals needs a live source; that lives on the parked `reddit-oauth` branch (OAuth-only, no Arctic), kept separate so the two source routes never overlap.
 
 ### Storage / Supabase
 
@@ -47,10 +49,10 @@ dashboard/ → Next.js 16 App Router, single-page client component
 
 ### Scraper internals (`scraper/src/reddit_opt_scraper/`)
 
-- `config.py` — thread list (Reddit post IDs), CSV field order, rate-limit delay (6 s/req)
-- `fetcher.py` — paginates Reddit's `.json` API with `after` cursor
+- `config.py` — thread list (Reddit post IDs), CSV field order, Arctic Shift URL, request delay (2 s)
+- `fetcher.py` — pages Arctic Shift `comments/search` by `link_id` + empty `parent_id` (top-level only) via a `created_utc` cursor; retries the ~10 s server timeout (HTTP 422)
 - `parser.py` — regex-based extraction of template fields from freeform comment text; the most fragile part — handles date normalization, null sentinels, and DD/MM/YYYY ambiguity
-- `exporter.py` — CSV load/save, deduplication (by `author + date_applied`), `merge` (fresh replaces existing by `comment_id`)
+- `exporter.py` — CSV load/save, deduplication (by `author + date_applied`), `merge` (**add-only**: inserts new `comment_id`s, never modifies existing rows)
 - `supastore.py` — Supabase backend: paginated `load_existing`, batched upsert `save` + stale-row delete, `save_meta`
 - `main.py` — Click CLI; loads `.env`, picks Supabase vs CSV backend, wires fetch → merge → dedupe → save
 

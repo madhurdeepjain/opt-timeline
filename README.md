@@ -22,6 +22,8 @@ opt-timeline/
 
 The scraper fetches each thread's comments, parses the timeline template, merges with existing records, dedupes, and **upserts to Supabase** (`timeline` + `meta` tables). The dashboard (`'use client'`) reads those tables **directly from the browser** via the Supabase publishable key. All filtering is client-side. No data is committed to the repo.
 
+**Comment source — Arctic Shift.** Reddit's public `.json` endpoints now return 403 to all unauthenticated traffic, so comments come from [Arctic Shift](https://arctic-shift.photon-reddit.com), a near-real-time archive (no credentials needed). Arctic Shift snapshots each comment ~once at post-time and **does not re-ingest later edits** — so it returns the original "Pending" body even after the author edits in an approval. Because of that, Arctic data is treated as **add-only**: a re-fetch can add brand-new comments but never modifies an existing row (the stored value may be newer than Arctic's snapshot). Capturing edited-in approvals requires a live source — see the parked `reddit-oauth` branch.
+
 ## Setup
 
 ### 1. Supabase

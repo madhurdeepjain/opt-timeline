@@ -72,8 +72,14 @@ CSV_FIELDS = [
     "raw_text",
 ]
 
-# Reddit's API guidelines ask for a unique, descriptive UA. We hit public .json
-# endpoints unauthenticated (no OAuth), but a self-identifying UA still complies
-# better than a generic browser string and is less likely to be filtered.
-USER_AGENT = "python:reddit-opt-scraper:1.1 (timeline aggregation; +https://github.com/madhurdjain/reddit-opt)"
-REQUEST_DELAY = 6.0  # seconds between requests — Reddit unauthenticated limit is 10 req/min (6s/req)
+# Arctic Shift comment search endpoint — a near-real-time Pushshift-style mirror
+# of Reddit data, used because Reddit's public .json endpoints now 403 all
+# unauthenticated/script traffic. See fetcher.py for the query strategy.
+ARCTIC_SHIFT_SEARCH_URL = "https://arctic-shift.photon-reddit.com/api/comments/search"
+
+# A unique, self-identifying UA — good etiquette for any public data API.
+USER_AGENT = "python:reddit-opt-scraper:2.0 (timeline aggregation; +https://github.com/madhurdjain/reddit-opt)"
+# Arctic Shift only asks that you "not make more than a couple requests per
+# second." Each link_id page already costs ~7-9s server-side, so a short
+# inter-page/-thread pause is plenty.
+REQUEST_DELAY = 2.0
