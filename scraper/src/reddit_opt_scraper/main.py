@@ -181,13 +181,20 @@ def cli(output: str, no_merge: bool, force_csv: bool, seed_from: str | None, ass
     console.print(tbl)
 
     if use_supabase:
-        # Show what this run will change, then confirm before writing.
-        final_ids = {r.get("comment_id") for r in final}
+        final_by_id = {r["comment_id"]: r for r in final if r.get("comment_id")}
+        final_ids = set(final_by_id)
         new = sum(1 for cid in final_ids if cid not in existing)
+        updated = sum(
+            1 for cid in final_ids
+            if cid in existing
+            and final_by_id[cid].get("raw_text") != existing[cid].get("raw_text")
+        )
+        unchanged = len(final_ids) - new - updated
         stale = sum(1 for cid in existing if cid not in final_ids)
         console.print(
             f"\nSupabase changes: [green]+{new} new[/green], "
-            f"{len(final_ids) - new} existing kept, "
+            f"[cyan]~{updated} updated[/cyan], "
+            f"{unchanged} unchanged, "
             f"[red]-{stale} stale removed[/red]"
         )
         # Auto-proceed when non-interactive (CI) or --yes; otherwise prompt.
