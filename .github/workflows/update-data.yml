@@ -17,6 +17,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: reddit-cookie
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -28,6 +30,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          REDDIT_COOKIE: ${{ secrets.REDDIT_COOKIE }}
         run: |
           uv sync
           uv run scrape --yes
