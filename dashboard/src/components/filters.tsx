@@ -1237,9 +1237,35 @@ export default function Filters({ filters, onChange, onClear, total, citizenship
         <PillTab active={filters.premium === 'standard'} onClick={() => onChange({ ...filters, premium: 'standard' })} count={pillCounts.premium.standard}>
           Standard
         </PillTab>
-        <PillTab active={filters.premium === 'any_premium'} onClick={() => onChange({ ...filters, premium: 'any_premium' })} count={pillCounts.premium.any_premium}>
-          Any premium
-        </PillTab>
+        {filters.premium !== 'any_premium' && filters.premium !== 'premium' && filters.premium !== 'upgraded' ? (
+          <PillTab active={false} onClick={() => onChange({ ...filters, premium: 'any_premium' })} count={pillCounts.premium.any_premium}>
+            Premium
+          </PillTab>
+        ) : (
+          <div className="flex items-center gap-0.5 rounded-full px-1 py-0.5" style={{ backgroundColor: 'var(--ink)' }}>
+            {([
+              { key: 'any_premium', label: 'Any' },
+              { key: 'premium', label: 'From start' },
+              { key: 'upgraded', label: 'Upgraded' },
+            ] as { key: FilterState['premium']; label: string }[]).map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => onChange({ ...filters, premium: key })}
+                className="px-2.5 py-1 rounded-full text-[12px] font-medium transition-colors cursor-pointer"
+                style={
+                  filters.premium === key
+                    ? { backgroundColor: 'var(--canvas)', color: 'var(--ink)' }
+                    : { backgroundColor: 'transparent', color: 'var(--on-ink)', opacity: 0.7 }
+                }
+              >
+                {label}
+                <span className="ml-1 text-[10px]" style={{ opacity: 0.6 }}>
+                  {key === 'any_premium' ? pillCounts.premium.any_premium : key === 'premium' ? pillCounts.premium.premium : pillCounts.premium.upgraded}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
         <PillTab active={filters.premium === 'unknown'} onClick={() => onChange({ ...filters, premium: 'unknown' })} count={pillCounts.premium.unknown}>
           Unknown
         </PillTab>
