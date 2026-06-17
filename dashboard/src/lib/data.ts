@@ -13,6 +13,7 @@ export function applyFilters(records: TimelineRecord[], filters: FilterState): T
     if (filters.type === 'unknown' && (r.normalized_type === 'OPT' || r.normalized_type === 'STEM')) return false
     if (filters.premium === 'premium' && !(r.premium_processing === true && r.pp_upgraded !== true)) return false
     if (filters.premium === 'upgraded' && r.pp_upgraded !== true) return false
+    if (filters.premium === 'any_premium' && r.premium_processing !== true) return false
     if (filters.premium === 'standard' && r.premium_processing !== false) return false
     if (filters.premium === 'unknown' && r.premium_processing !== null) return false
     if (filters.approved === 'yes' && !r.date_approved) return false
