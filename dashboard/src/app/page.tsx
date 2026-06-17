@@ -152,11 +152,12 @@ export default function Home() {
       else if (r.premium_processing === true) prem++
       else premUnk++
     }
+    const anyPremium = prem + upgraded
     let approvedYes = 0
     for (const r of baseApproved) if (r.date_approved) approvedYes++
     return {
       type: { OPT: opt, STEM: stem, unknown: typeUnk },
-      premium: { standard: std, premium: prem, upgraded, unknown: premUnk },
+      premium: { standard: std, premium: prem, upgraded, any_premium: anyPremium, unknown: premUnk },
       approved: { yes: approvedYes, no: baseApproved.length - approvedYes, unknown: 0 },
     }
   }, [records, filters])

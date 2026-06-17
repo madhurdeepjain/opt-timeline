@@ -147,19 +147,16 @@ def load_existing(path: Path) -> dict[str, dict]:
 
 
 def merge(existing: dict[str, dict], fresh: list[dict]) -> list[dict]:
-    """Add-only: insert brand-new comments; never modify an existing row.
+    """Fresh always wins: new records are inserted, existing records are overwritten.
 
-    Arctic Shift returns each comment's original post-time snapshot and does not
-    re-ingest edits, while the stored row may already hold newer, edit-captured
-    values (from the live-scraped seed, or a future OAuth run). So a re-fetched
-    *existing* comment must not overwrite — or even fill — the stored row: doing
-    so could resurrect a value the author later edited out. Only genuinely new
-    comment_ids are added, in full.
+    Unlike the Arctic Shift source (which freezes comments at post-time), the
+    Reddit cookie source returns current comment bodies including edits, so the
+    fresh value is always authoritative.
     """
     merged = dict(existing)
     for rec in fresh:
         cid = rec.get("comment_id")
-        if cid and cid not in merged:
+        if cid:
             merged[cid] = rec
     return list(merged.values())
 

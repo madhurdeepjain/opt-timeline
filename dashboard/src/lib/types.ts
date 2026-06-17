@@ -54,7 +54,7 @@ export const SERVICE_CENTER_UNSPECIFIED = '__sc_unspecified__'
 
 export interface FilterState {
   type: 'all' | 'OPT' | 'STEM' | 'unknown'
-  premium: 'all' | 'standard' | 'premium' | 'upgraded' | 'unknown'
+  premium: 'all' | 'standard' | 'premium' | 'upgraded' | 'any_premium' | 'unknown'
   approved: 'all' | 'yes' | 'no' | 'unknown'
   cardStatus: ('none' | 'produced' | 'received')[]
   rfie: 'all' | 'yes' | 'no'

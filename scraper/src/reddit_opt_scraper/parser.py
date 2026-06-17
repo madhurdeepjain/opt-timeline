@@ -745,6 +745,12 @@ def compute_derived(record: dict) -> dict:
 
     r["days_to_approval"] = diff(record.get("date_applied"), record.get("date_approved"))
     r["days_to_card"] = diff(record.get("date_applied"), record.get("date_card_received"))
+
+    # If the upgrade date equals the applied date, they applied with PP from the start — not an upgrade.
+    if r.get("pp_upgrade_date") and r.get("date_applied") and r["pp_upgrade_date"] == r["date_applied"]:
+        r["pp_upgraded"] = None
+        r["pp_upgrade_date"] = None
+
     return r
 
 

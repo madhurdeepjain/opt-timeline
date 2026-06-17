@@ -7,12 +7,14 @@ import traceback
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+import os
+
 import click
 import httpx
 from dotenv import load_dotenv
 from rich.console import Console
 
-# Load credentials from a local .env (Supabase + optional Reddit OAuth) if present.
+# Load credentials from a local .env (Supabase + Reddit auth) if present.
 # In CI these come from the environment/secrets, so a missing file is fine.
 load_dotenv()
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -130,6 +132,15 @@ def cli(output: str, no_merge: bool, force_csv: bool, seed_from: str | None, ass
     all_fresh: list[dict] = []
     failed_threads: list[str] = []
 
+    reddit_cookie = os.environ.get("REDDIT_COOKIE") or None
+    reddit_token = os.environ.get("REDDIT_TOKEN") or None
+    if reddit_token:
+        console.print("Auth → [cyan]bearer token[/cyan] (oauth.reddit.com)")
+    elif reddit_cookie:
+        console.print("Auth → [cyan]session cookie[/cyan] (www.reddit.com)")
+    else:
+        console.print("[yellow]⚠ No REDDIT_COOKIE or REDDIT_TOKEN set — requests may 403[/yellow]")
+
     with httpx.Client() as client:
         for i, thread in enumerate(THREADS):
             sub = thread["subreddit"]
@@ -143,7 +154,7 @@ def cli(output: str, no_merge: bool, force_csv: bool, seed_from: str | None, ass
             with Progress(SpinnerColumn(), TextColumn("{task.description}"), console=console) as prog:
                 task = prog.add_task("Starting…", total=None)
                 try:
-                    for comment in fetch_all_comments(thread, client):
+                    for comment in fetch_all_comments(thread, client, cookie=reddit_cookie, token=reddit_token):
                         seen += 1
                         prog.update(task, description=f"Comments fetched: {seen}")
                         rec = _build_record(comment, thread)
