@@ -149,9 +149,8 @@ def load_existing(path: Path) -> dict[str, dict]:
 def merge(existing: dict[str, dict], fresh: list[dict]) -> list[dict]:
     """Fresh always wins: new records are inserted, existing records are overwritten.
 
-    Unlike the Arctic Shift source (which freezes comments at post-time), the
-    Reddit cookie source returns current comment bodies including edits, so the
-    fresh value is always authoritative.
+    Reddit returns current comment bodies (including edits), so the fresh value
+    is always authoritative. Existing records not seen in this run are kept.
     """
     merged = dict(existing)
     for rec in fresh:

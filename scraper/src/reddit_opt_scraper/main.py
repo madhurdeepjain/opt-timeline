@@ -1,22 +1,17 @@
 """CLI entry-point: `uv run scrape`"""
 
 import json
+import os
 import sys
 import time
 import traceback
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-import os
-
 import click
 import httpx
 from dotenv import load_dotenv
 from rich.console import Console
-
-# Load credentials from a local .env (Supabase + Reddit auth) if present.
-# In CI these come from the environment/secrets, so a missing file is fine.
-load_dotenv()
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
@@ -25,6 +20,10 @@ from .config import THREADS, DEFAULT_OUTPUT, REQUEST_DELAY
 from .fetcher import fetch_all_comments
 from .parser import parse_comment, compute_derived, has_template_data
 from .exporter import dedupe_by_author_date, load_existing, merge, save
+
+# Load credentials from a local .env (Supabase + Reddit auth) if present.
+# In CI these come from the environment/secrets, so a missing file is fine.
+load_dotenv()
 
 # Date fields that must not be in the future. We use a single "today" snapshot
 # captured at scrape start so a long run doesn't produce inconsistent results
@@ -102,10 +101,9 @@ def _build_record(comment: dict, thread: dict) -> dict | None:
 @click.option("--output", "-o", default=DEFAULT_OUTPUT, show_default=True, help="Output CSV path (CSV backend)")
 @click.option("--no-merge", is_flag=True, default=False, help="Overwrite instead of merging with existing records")
 @click.option("--csv", "force_csv", is_flag=True, default=False, help="Write to CSV even if Supabase env vars are set")
-@click.option("--seed-from", "seed_from", default=None, help="Load existing records from this CSV instead of the active store (one-time Supabase migration seed)")
 @click.option("--yes", "-y", "assume_yes", is_flag=True, default=False, help="Skip the confirmation prompt before writing to Supabase")
 @click.option("--verbose", "-v", is_flag=True, default=False)
-def cli(output: str, no_merge: bool, force_csv: bool, seed_from: str | None, assume_yes: bool, verbose: bool) -> None:
+def cli(output: str, no_merge: bool, force_csv: bool, assume_yes: bool, verbose: bool) -> None:
     """Scrape OPT/STEM OPT processing timelines and save to Supabase or CSV."""
     out_path = Path(output)
     sb_url, sb_key = supastore.supabase_config()
@@ -119,14 +117,11 @@ def cli(output: str, no_merge: bool, force_csv: bool, seed_from: str | None, ass
 
     if no_merge:
         existing = {}
-    elif seed_from:
-        existing = load_existing(Path(seed_from))
-        console.print(f"Seed: loaded [bold]{len(existing)}[/bold] existing from {seed_from}")
     elif use_supabase:
         existing = supastore.load_existing(sb_url, sb_key)
     else:
         existing = load_existing(out_path)
-    if existing and not seed_from:
+    if existing:
         console.print(f"Loaded [bold]{len(existing)}[/bold] existing records")
 
     all_fresh: list[dict] = []

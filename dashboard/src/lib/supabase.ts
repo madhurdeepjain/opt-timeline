@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 
 // Reads use the publishable key (sb_publishable_…), the 2025+ replacement for
 // the legacy anon key. It's safe in the browser: the timeline/meta tables are
-// read-only to it via RLS (see supabase/schema.sql). Writes use the secret key,
+// read-only to it via RLS (see supabase/migrations/). Writes use the secret key,
 // which lives only in the scraper env — never here.
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL
 const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
