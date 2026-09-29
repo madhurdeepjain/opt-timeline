@@ -7,8 +7,8 @@ import {
 } from 'recharts'
 import type { TimelineRecord, QuantileEstimate } from '@/lib/types'
 import { buildWaitCurve, waitCurveMaxDay, recentApprovals, sortedWaits, quantileCI, processingKind, MIN_N } from '@/lib/data'
+import { WAIT_WINDOWS } from '@/lib/types'
 import { daysBetween, formatShortDate, localToday } from '@/lib/utils'
-import { windowPhrase } from '@/components/wait-window-picker'
 
 const PREFS_KEY = 'way-prefs'
 const JOURNEY_KEY = 'my-journey'
@@ -84,10 +84,12 @@ function SummaryBox({ value, sub, accent }: { value: string; sub: string; accent
 export default function WhereAreYouCard({
   records,
   waitWindow,
+  onWaitWindowChange,
   asOf,
 }: {
   records: TimelineRecord[]
   waitWindow: number | null
+  onWaitWindowChange: (days: number | null) => void
   asOf: string
 }) {
   const today = localToday()
@@ -131,12 +133,16 @@ export default function WhereAreYouCard({
     [records]
   )
 
-  const cohort = useMemo(() => {
-    let r = base2026
-    if (typeFilter) r = r.filter((x) => x.normalized_type === typeFilter)
-    if (premiumFilter) r = r.filter((x) => processingKind(x) === premiumFilter)
-    return r
-  }, [base2026, typeFilter, premiumFilter])
+  // "Your position" compares against the selected type and processing;
+  // "By processing" keeps the type but splits every processing kind out.
+  const typeCohort = useMemo(
+    () => (typeFilter ? base2026.filter((x) => x.normalized_type === typeFilter) : base2026),
+    [base2026, typeFilter],
+  )
+  const cohort = useMemo(
+    () => (premiumFilter ? typeCohort.filter((x) => processingKind(x) === premiumFilter) : typeCohort),
+    [typeCohort, premiumFilter],
+  )
 
   // Everything below describes cases approved recently, not everyone who applied:
   // wait times are only known once someone reports their approval.
@@ -149,37 +155,44 @@ export default function WhereAreYouCard({
   const p75 = quantileCI(waits, 0.75)
   const p90 = quantileCI(waits, 0.9)
 
+  const typeRecent = useMemo(() => recentApprovals(typeCohort, waitWindow, asOf), [typeCohort, waitWindow, asOf])
+  const typeWaits = useMemo(() => sortedWaits(typeRecent), [typeRecent])
+  const compareMax = waitCurveMaxDay(typeWaits)
+  const compareEnough = typeWaits.length >= MIN_N
   const byKind = useMemo(() => {
     const out: Record<'standard' | 'premium' | 'upgraded', number[]> = { standard: [], premium: [], upgraded: [] }
-    for (const r of recent) {
+    for (const r of typeRecent) {
       const k = processingKind(r)
       if (k !== 'unknown') out[k].push(r.days_to_approval as number)
     }
     for (const k of Object.keys(out) as (keyof typeof out)[]) out[k].sort((a, b) => a - b)
     return out
-  }, [recent])
+  }, [typeRecent])
   const compareCurve = useMemo(() => {
+    if (!compareEnough) return []
+    const all = buildWaitCurve(typeWaits, compareMax)
     const curves = {
-      Standard: byKind.standard.length >= MIN_N ? buildWaitCurve(byKind.standard, maxDay) : null,
-      Premium: byKind.premium.length >= MIN_N ? buildWaitCurve(byKind.premium, maxDay) : null,
-      Upgraded: byKind.upgraded.length >= MIN_N ? buildWaitCurve(byKind.upgraded, maxDay) : null,
+      Standard: byKind.standard.length >= MIN_N ? buildWaitCurve(byKind.standard, compareMax) : null,
+      Premium: byKind.premium.length >= MIN_N ? buildWaitCurve(byKind.premium, compareMax) : null,
+      Upgraded: byKind.upgraded.length >= MIN_N ? buildWaitCurve(byKind.upgraded, compareMax) : null,
     }
-    return curve.map((pt, i) => ({
+    return all.map((pt, i) => ({
       day: pt.day,
       All: pt.pctApproved,
       Standard: curves.Standard?.[i].pctApproved,
       Premium: curves.Premium?.[i].pctApproved,
       Upgraded: curves.Upgraded?.[i].pctApproved,
     }))
-  }, [curve, byKind, maxDay])
+  }, [compareEnough, typeWaits, compareMax, byKind])
 
   // Already approved (per the journey tracker, same applied date): the wait is final.
   const approvedOn = appliedDate && journeyDates.approved && journeyDates.applied === appliedDate ? journeyDates.approved : null
   const waitDays = appliedDate ? Math.max(0, daysBetween(appliedDate, approvedOn ?? today)) : null
-  // Share of recent approvals that took no longer than the user's wait.
-  const pctFaster = waitDays != null && enough
+  // Of the comparison cases: share approved by the user's day, and share that waited longer.
+  const pctDone = waitDays != null && enough
     ? Math.round((waits.filter((d) => d <= waitDays).length / waits.length) * 100)
     : null
+  const nLonger = waitDays != null ? waits.filter((d) => d > waitDays).length : 0
   // Percentile lines closer than ~4% of the axis share one label.
   const quantileLabels = useMemo(() => {
     const qs: [string, QuantileEstimate | null][] = [['median', p50], ['75%', p75], ['90%', p90]]
@@ -205,8 +218,12 @@ export default function WhereAreYouCard({
   const markerDay = waitDays != null ? Math.min(Math.max(waitDays, 1), maxDay) : null
   const markerPct = markerDay != null ? curve.find((p) => p.day === markerDay)?.pctApproved : undefined
   const daysToP75 = p75 && waitDays != null ? p75.value - waitDays : null
-  const ticks = Array.from({ length: Math.floor(maxDay / 30) }, (_, i) => (i + 1) * 30)
-  const scope = `${waits.length} ${typeFilter ?? ''} ${premiumFilter ?? ''} cases ${windowPhrase(waitWindow)}`.replace(/\s+/g, ' ')
+  const ticksTo = (max: number) => Array.from({ length: Math.floor(max / 30) }, (_, i) => (i + 1) * 30)
+  const typeLabel = typeFilter === 'STEM' ? 'STEM OPT' : typeFilter === 'OPT' ? 'OPT' : null
+  const processingLabel = premiumFilter === 'premium' ? 'premium from the start' : premiumFilter
+  // "108 STEM OPT · standard cases" / "892 cases"
+  const groupLabel = (n: number, withProcessing: boolean) =>
+    `${n} ${[typeLabel, withProcessing ? processingLabel : null].filter(Boolean).join(' · ')} cases`.replace(/\s+/g, ' ')
 
   return (
     <div
@@ -238,7 +255,7 @@ export default function WhereAreYouCard({
                 color: tab === t ? 'var(--on-ink)' : 'var(--mute)',
               }}
             >
-              {t === 'position' ? 'Your position' : 'Compare processing'}
+              {t === 'position' ? 'Your position' : 'By processing'}
             </button>
           ))}
         </div>
@@ -281,45 +298,76 @@ export default function WhereAreYouCard({
         </div>
       </div>
 
+      {/* Who "similar cases" are: everything below is relative to this group. */}
+      <p className="text-[13px] -mt-1" style={{ color: 'var(--body)' }}>
+        Compared with{' '}
+        <strong style={{ color: 'var(--ink)' }}>
+          {tab === 'position' ? groupLabel(waits.length, true) : groupLabel(typeWaits.length, false)}
+        </strong>{' '}
+        from the 2026 threads approved{' '}
+        <select
+          value={waitWindow ?? 'all'}
+          onChange={(e) => onWaitWindowChange(e.target.value === 'all' ? null : Number(e.target.value))}
+          aria-label="Approval window"
+          className="text-[13px] font-semibold rounded px-1 py-0.5 cursor-pointer outline-none"
+          style={{ backgroundColor: 'var(--surface-soft)', color: 'var(--ink)', border: '1px solid var(--hairline)' }}
+        >
+          {WAIT_WINDOWS.map((w) => (
+            <option key={w ?? 'all'} value={w ?? 'all'}>
+              {w === null ? 'at any time' : `in the last ${w} days`}
+            </option>
+          ))}
+        </select>
+        . Only approved cases have a known wait, so pending ones aren&apos;t counted.
+      </p>
+
       {/* Summary strip */}
-      {waitDays != null && enough ? (
+      {tab === 'position' && waitDays != null && enough ? (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <SummaryBox
-            value={approvedOn ? `Approved on day ${waitDays}` : `Day ${waitDays}`}
-            sub={approvedOn ? `${formatShortDate(approvedOn)}, from your journey above` : 'since you applied'}
-          />
           {approvedOn ? (
-            <SummaryBox
-              value={pctFaster === 0 ? `Faster than all ${waits.length}` : `Faster than ${100 - (pctFaster ?? 0)}%`}
-              sub={pctFaster === 0 ? scope.replace(/^\d+ /, '') : `of ${scope}`}
-            />
+            <>
+              <SummaryBox
+                value={`${waitDays} days`}
+                sub={`your wait: ${formatShortDate(appliedDate)} → ${formatShortDate(approvedOn)} (from your journey)`}
+              />
+              <SummaryBox
+                value={nLonger === waits.length ? `All ${waits.length}` : nLonger === 0 ? 'None' : `${Math.round((nLonger / waits.length) * 100)}%`}
+                sub="of these cases waited longer than you"
+              />
+              {p50 && (
+                <SummaryBox
+                  value={waitDays === p50.value ? 'Same as the median' : `${Math.abs(waitDays - p50.value)} days ${waitDays < p50.value ? 'less' : 'more'}`}
+                  sub={`than their median wait of ${p50.value} days`}
+                />
+              )}
+            </>
           ) : (
-            <SummaryBox value={`${pctFaster}%`} sub={`of ${scope} came within ${waitDays} days`} />
-          )}
-          {approvedOn && p50 ? (
-            <SummaryBox
-              value={waitDays === p50.value ? 'Right at the median' : `${Math.abs(waitDays - p50.value)}d ${waitDays < p50.value ? 'faster' : 'slower'}`}
-              sub={`than the median of ${p50.value}d`}
-            />
-          ) : p75 && daysToP75 != null && daysToP75 <= 0 ? (
-            <SummaryBox value={`Past ${p75.value}d`} sub="longer than 3 in 4 of them waited" accent />
-          ) : (
-            <SummaryBox
-              value={p75 && daysToP75 != null ? `~${daysToP75}d` : '—'}
-              sub={p75 ? `until ${p75.value}d, the wait 3 in 4 of them stayed under` : 'too few cases for a 75th percentile'}
-            />
+            <>
+              <SummaryBox value={`Day ${waitDays}`} sub={`waiting since ${formatShortDate(appliedDate)}`} />
+              <SummaryBox value={`${pctDone}%`} sub={`of these cases were approved by day ${waitDays}`} />
+              {p75 && daysToP75 != null && daysToP75 <= 0 ? (
+                <SummaryBox value={`Past ${p75.value} days`} sub="longer than 3 in 4 of these cases waited" accent />
+              ) : (
+                <SummaryBox
+                  value={p75 && daysToP75 != null ? `~${daysToP75} days` : '—'}
+                  sub={p75 ? `until day ${p75.value}: 3 in 4 of these cases were approved by then` : 'too few cases for a 75th percentile'}
+                />
+              )}
+            </>
           )}
         </div>
-      ) : (
+      ) : (tab === 'position' ? !enough : !compareEnough) ? (
         <p className="text-[13px]" style={{ color: 'var(--mute)' }}>
-          {enough
-            ? 'Enter your applied date above, then narrow by type and processing to match your situation.'
-            : `Only ${scope} — at least ${MIN_N} are needed. Try a longer window or fewer filters.`}
+          At least {MIN_N} cases are needed. Try a longer window or fewer filters.
         </p>
-      )}
+      ) : tab === 'position' ? (
+        <p className="text-[13px]" style={{ color: 'var(--mute)' }}>
+          Enter your applied date to see where you stand.
+        </p>
+      ) : null}
 
       {/* Chart */}
-      {!enough ? null : tab === 'position' ? (
+      {tab === 'position' ? (!enough ? null : (
         <>
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={curve} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
@@ -331,7 +379,7 @@ export default function WhereAreYouCard({
               </defs>
               <XAxis
                 dataKey="day"
-                ticks={ticks}
+                ticks={ticksTo(maxDay)}
                 tick={{ fontSize: 11, fill: 'var(--mute)' }}
                 axisLine={false}
                 tickLine={false}
@@ -370,17 +418,17 @@ export default function WhereAreYouCard({
             </AreaChart>
           </ResponsiveContainer>
           <p className="text-[11px]" style={{ color: 'var(--mute)' }}>
-            {`Share of ${scope} (2026 threads) that were approved within each number of days. Dashed lines mark the 50th, 75th and 90th percentiles where there are enough cases. Pending cases aren't included: their wait isn't known yet.`}
+            Share of these cases approved within each number of days. Dashed lines mark the median, 75th and 90th percentiles.
           </p>
         </>
-      ) : (
+      )) : !compareEnough ? null : (
         <>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={compareCurve} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline-soft)" vertical={false} />
               <XAxis
                 dataKey="day"
-                ticks={ticks}
+                ticks={ticksTo(compareMax)}
                 tick={{ fontSize: 11, fill: 'var(--mute)' }}
                 axisLine={false}
                 tickLine={false}
@@ -402,14 +450,14 @@ export default function WhereAreYouCard({
               />
               <Legend wrapperStyle={{ fontSize: '12px', color: 'var(--mute)', paddingTop: '8px' }} />
               <Line type="monotone" dataKey="All" stroke="var(--ink)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} />
-              {byKind.standard.length >= MIN_N && <Line type="monotone" dataKey="Standard" stroke="#9b9c92" strokeWidth={1.5} strokeDasharray="4 2" dot={false} activeDot={{ r: 3 }} />}
-              {byKind.premium.length >= MIN_N && <Line type="monotone" dataKey="Premium" stroke="#f7a501" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />}
-              {byKind.upgraded.length >= MIN_N && <Line type="monotone" dataKey="Upgraded" stroke="#5b9bd5" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />}
-              {markerDay != null && <ReferenceLine x={markerDay} stroke="var(--ink)" strokeWidth={1.5} strokeDasharray="3 3" opacity={0.5} />}
+              {byKind.standard.length >= MIN_N && <Line type="monotone" dataKey="Standard" stroke="#9b9c92" strokeWidth={premiumFilter === 'standard' ? 3 : 1.5} strokeDasharray="4 2" dot={false} activeDot={{ r: 3 }} />}
+              {byKind.premium.length >= MIN_N && <Line type="monotone" dataKey="Premium" stroke="#f7a501" strokeWidth={premiumFilter === 'premium' ? 3 : 1.5} dot={false} activeDot={{ r: 3 }} />}
+              {byKind.upgraded.length >= MIN_N && <Line type="monotone" dataKey="Upgraded" stroke="#5b9bd5" strokeWidth={premiumFilter === 'upgraded' ? 3 : 1.5} dot={false} activeDot={{ r: 3 }} />}
+              {waitDays != null && <ReferenceLine x={Math.min(Math.max(waitDays, 1), compareMax)} stroke="var(--ink)" strokeWidth={1.5} strokeDasharray="3 3" opacity={0.5} />}
             </LineChart>
           </ResponsiveContainer>
           <p className="text-[11px]" style={{ color: 'var(--mute)' }}>
-            Share of cases {windowPhrase(waitWindow)} approved within each number of days, by processing. Premium means premium from the start; upgraded cases are counted from their original filing date. Groups with fewer than {MIN_N} cases are hidden.
+            Share approved within each number of days, by how the case was processed. Premium means premium from the start; upgraded cases count from their original filing date. Groups with fewer than {MIN_N} cases are hidden.
           </p>
         </>
       )}

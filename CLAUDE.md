@@ -73,7 +73,7 @@ supabase/  → schema migrations + CLI config
 - `lib/utils.ts` — small helpers (`median`, `daysBetween`, `toYearMonth`, `formatDate`)
 - `app/page.tsx` — owns all filter state; computes facet counts (via `useMemo`) for each dimension against records filtered by all *other* active dimensions, then passes everything down to presentational components
 - `components/filters.tsx` — receives all facet counts as props; emits `onChange`
-- `components/where-are-you.tsx` — scoped to 2026 threads only, not affected by global `FilterState`
+- `components/where-are-you.tsx` — scoped to 2026 threads only, not affected by global `FilterState` (but shares the wait window, with its own inline selector). "Your position" compares against the chosen type + processing; "By processing" keeps the type and splits processing kinds, so it must not apply the processing pill
 - `components/user-journey.tsx` — localStorage-backed personal tracker (`personal-timeline.tsx`, the author's own hard-coded case, is kept but commented out of the page); syncs its type/premium selection to the global filter state via a `opt-filters-sync` custom DOM event. Its timeline is `components/timeline.tsx` (same-day events share a dot; labels are placed above/below so they never overlap)
 
 ### Design tokens

@@ -323,7 +323,7 @@ export default function Home() {
 
             {/* Where Are You — uses own 2026-thread scope, unaffected by global filters */}
             <section>
-              <WhereAreYouCard records={records} waitWindow={waitWindow} asOf={asOf} />
+              <WhereAreYouCard records={records} waitWindow={waitWindow} onWaitWindowChange={setWaitWindow} asOf={asOf} />
             </section>
 
             {/* Filters */}
