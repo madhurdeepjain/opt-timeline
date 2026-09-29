@@ -9,12 +9,12 @@ import { fetchAllTimeline, fetchMeta } from '@/lib/supabase'
 
 import Nav from '@/components/nav'
 import UserJourney from '@/components/user-journey'
-import PersonalTimeline from '@/components/personal-timeline'
 import Filters from '@/components/filters'
 import StatsCards from '@/components/stats-cards'
 import { ProcessingTimeChart, MonthlyTrendChart, WaitTrendChart } from '@/components/charts'
 import WaitWindowPicker from '@/components/wait-window-picker'
 import DataTable from '@/components/data-table'
+// import PersonalTimeline from '@/components/personal-timeline' // the author's own case; hidden for now
 import Footer from '@/components/footer'
 import WhereAreYouCard from '@/components/where-are-you'
 import StageFunnel from '@/components/stage-funnel'
@@ -334,7 +334,7 @@ export default function Home() {
             {/* Stats */}
             <section className="space-y-4">
               <WaitWindowPicker value={waitWindow} onChange={setWaitWindow} />
-              <StatsCards stats={stats} waitWindow={waitWindow} />
+              <StatsCards stats={stats} waitWindow={waitWindow} premiumFilter={filters.premium} />
             </section>
 
             {/* Charts */}
@@ -366,10 +366,11 @@ export default function Home() {
               <DataTable records={filtered} />
             </section>
 
-            {/* Personal Timeline */}
+            {/* The author's own timeline, hidden for now:
             <section>
               <PersonalTimeline />
             </section>
+            */}
           </>
         )}
       </main>

@@ -74,7 +74,7 @@ supabase/  → schema migrations + CLI config
 - `app/page.tsx` — owns all filter state; computes facet counts (via `useMemo`) for each dimension against records filtered by all *other* active dimensions, then passes everything down to presentational components
 - `components/filters.tsx` — receives all facet counts as props; emits `onChange`
 - `components/where-are-you.tsx` — scoped to 2026 threads only, not affected by global `FilterState`
-- `components/user-journey.tsx` / `personal-timeline.tsx` — localStorage-backed personal trackers; sync their type/premium selection to the global filter state via a `opt-filters-sync` custom DOM event
+- `components/user-journey.tsx` — localStorage-backed personal tracker (`personal-timeline.tsx`, the author's own hard-coded case, is kept but commented out of the page); syncs its type/premium selection to the global filter state via a `opt-filters-sync` custom DOM event. Its timeline is `components/timeline.tsx` (same-day events share a dot; labels are placed above/below so they never overlap)
 
 ### Design tokens
 

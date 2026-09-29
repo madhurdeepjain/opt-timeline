@@ -255,18 +255,32 @@ export function buildCountryData(recent: TimelineRecord[]): CountryBreakdown[] {
   return out.sort((a, b) => a.median - b.median)
 }
 
+/**
+ * Applications per applied month, one point per calendar month (empty months
+ * are zeros, not skipped). Leading months under 2% of the peak are trimmed: a
+ * handful of typo'd or out-of-cycle dates otherwise stretch the axis over years
+ * of nothing. Recent months stay even when sparse: they're real, just not
+ * reported yet.
+ */
 export function buildMonthlyTrendData(records: TimelineRecord[]) {
   const counts: Record<string, { OPT: number; STEM: number }> = {}
-
   for (const r of records) {
     if (!r.date_applied) continue
-    const ym = toYearMonth(r.date_applied)
-    if (!counts[ym]) counts[ym] = { OPT: 0, STEM: 0 }
-    if (r.normalized_type === 'OPT') counts[ym].OPT++
-    else if (r.normalized_type === 'STEM') counts[ym].STEM++
+    const c = (counts[toYearMonth(r.date_applied)] ??= { OPT: 0, STEM: 0 })
+    if (r.normalized_type === 'OPT') c.OPT++
+    else if (r.normalized_type === 'STEM') c.STEM++
   }
+  const months = Object.keys(counts).sort()
+  if (months.length === 0) return []
+  const total = (ym: string) => (counts[ym] ? counts[ym].OPT + counts[ym].STEM : 0)
+  const floor = Math.max(...months.map(total)) * 0.02
+  const hi = months.length - 1
+  let lo = 0
+  while (lo < hi && total(months[lo]) < floor) lo++
 
-  return Object.entries(counts)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([ym, c]) => ({ ym, ...c }))
+  const out: { ym: string; OPT: number; STEM: number }[] = []
+  for (let ym = months[lo]; ym <= months[hi]; ym = addDays(`${ym}-15`, 31).slice(0, 7)) {
+    out.push({ ym, ...(counts[ym] ?? { OPT: 0, STEM: 0 }) })
+  }
+  return out
 }

@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { useMounted } from '@/lib/use-mounted'
-import { Check, ChevronLeft, Pencil } from 'lucide-react'
+import { ChevronLeft, Pencil } from 'lucide-react'
+import Timeline from '@/components/timeline'
 import { formatShortDate, daysBetween, localToday } from '@/lib/utils'
 import confetti from 'canvas-confetti'
 
@@ -170,13 +171,6 @@ function buildEvents(j: JourneyData) {
   if (j.date_card_received) events.push({ label: 'EAD Card Received', short: 'Card In', date: j.date_card_received })
   return events
 }
-
-// Layout constants (match personal-timeline.tsx)
-const H_PAD   = 44
-const DOT     = 28
-const LINE_Y  = 50
-const H       = 106
-const DOT_TOP = LINE_Y - DOT / 2  // 36
 
 function Wizard({
   initialData,
@@ -389,18 +383,6 @@ function UserJourneyCard() {
     ? daysBetween(journey.date_applied, localToday())
     : null
 
-  let startMs = 0
-  let totalMs = 0
-  if (events.length >= 2) {
-    startMs = new Date(events[0].date + 'T12:00:00Z').getTime()
-    totalMs = new Date(events[events.length - 1].date + 'T12:00:00Z').getTime() - startMs
-  }
-
-  function frac(dateStr: string): number {
-    if (totalMs === 0) return 0
-    return (new Date(dateStr + 'T12:00:00Z').getTime() - startMs) / totalMs
-  }
-
   const showInvitation = journey === null && !started
   const showWizard = journey === null ? started : editing
 
@@ -452,7 +434,7 @@ function UserJourneyCard() {
       ) : (
         <>
           {/* Header */}
-          <div className="flex items-start justify-between mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
             <div>
               <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--mute)' }}>
                 Your Journey
@@ -497,125 +479,7 @@ function UserJourneyCard() {
           </div>
 
           {events.length >= 2 ? (
-            <>
-              {/* Desktop: proportional horizontal timeline */}
-              <div className="hidden md:block">
-                <div className="relative w-full" style={{ height: H }}>
-                  <div
-                    className="absolute"
-                    style={{ top: LINE_Y, left: H_PAD, right: H_PAD, height: 1, backgroundColor: 'var(--hairline)' }}
-                  />
-                  {events.map((event, i) => {
-                    const f = frac(event.date)
-                    const above = i % 2 === 1
-                    return (
-                      <div
-                        key={event.date + i}
-                        className="absolute"
-                        style={{
-                          left: `calc(${H_PAD}px + (100% - ${H_PAD * 2}px) * ${f})`,
-                          transform: 'translateX(-50%)',
-                          top: 0,
-                          height: H,
-                        }}
-                      >
-                        {above && (
-                          <div
-                            className="absolute text-center whitespace-nowrap"
-                            style={{ bottom: H - DOT_TOP + 5, left: '50%', transform: 'translateX(-50%)' }}
-                          >
-                            <p className="text-[11px] font-semibold leading-tight" style={{ color: 'var(--ink)' }}>{event.short}</p>
-                            <p className="text-[10px] mt-0.5" style={{ color: 'var(--mute)' }}>{formatShortDate(event.date)}</p>
-                          </div>
-                        )}
-                        <div
-                          className="group absolute rounded-full flex items-center justify-center cursor-default"
-                          style={{
-                            width: DOT,
-                            height: DOT,
-                            top: DOT_TOP,
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            backgroundColor: 'var(--ink)',
-                            color: 'var(--on-ink)',
-                            zIndex: 2,
-                          }}
-                        >
-                          <Check size={13} strokeWidth={2.5} />
-                          <div
-                            className="pointer-events-none absolute opacity-0 group-hover:opacity-100 transition-opacity z-20 whitespace-nowrap"
-                            style={{
-                              ...(above ? { top: 'calc(100% + 6px)' } : { bottom: 'calc(100% + 6px)' }),
-                              left: '50%',
-                              transform: 'translateX(-50%)',
-                              backgroundColor: 'var(--surface-dark)',
-                              color: '#fff',
-                              fontSize: 11,
-                              fontWeight: 600,
-                              padding: '3px 8px',
-                              borderRadius: 4,
-                            }}
-                          >
-                            {event.label}
-                          </div>
-                        </div>
-                        {!above && (
-                          <div
-                            className="absolute text-center whitespace-nowrap"
-                            style={{ top: DOT_TOP + DOT + 5, left: '50%', transform: 'translateX(-50%)' }}
-                          >
-                            <p className="text-[11px] font-semibold leading-tight" style={{ color: 'var(--ink)' }}>{event.short}</p>
-                            <p className="text-[10px] mt-0.5" style={{ color: 'var(--mute)' }}>{formatShortDate(event.date)}</p>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Mobile: vertical list with day gaps */}
-              <div className="md:hidden">
-                {events.map((event, i) => {
-                  const isLast = i === events.length - 1
-                  const daysSincePrev =
-                    i > 0
-                      ? Math.round(
-                          (new Date(event.date + 'T12:00:00Z').getTime() -
-                            new Date(events[i - 1].date + 'T12:00:00Z').getTime()) /
-                            86_400_000,
-                        )
-                      : null
-                  return (
-                    <div key={event.date + i} className="flex items-start gap-3">
-                      <div className="flex flex-col items-center flex-shrink-0">
-                        <div
-                          className="w-6 h-6 rounded-full flex items-center justify-center"
-                          style={{ backgroundColor: 'var(--ink)', color: 'var(--on-ink)' }}
-                        >
-                          <Check size={11} strokeWidth={2.5} />
-                        </div>
-                        {!isLast && (
-                          <div
-                            className="w-px flex-1 mt-1"
-                            style={{ backgroundColor: 'var(--hairline-soft)', minHeight: 20 }}
-                          />
-                        )}
-                      </div>
-                      <div className="pb-4">
-                        <p className="text-sm font-semibold leading-tight" style={{ color: 'var(--ink)' }}>
-                          {event.label}
-                        </p>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--mute)' }}>
-                          {formatShortDate(event.date)}
-                          {daysSincePrev !== null && ` · +${daysSincePrev}d`}
-                        </p>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </>
+            <Timeline events={events} />
           ) : (
             <p className="text-sm" style={{ color: 'var(--mute)' }}>
               {events.length === 1

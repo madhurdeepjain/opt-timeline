@@ -50,14 +50,15 @@ export function ProcessingTimeChart({ data, waitWindow, n }: { data: HistogramDa
   const hasSTEM = data.some((d) => d.STEM > 0)
 
   return (
-    <ChartCard title="Processing Time Distribution" sub={`Days to approval · ${n} cases ${windowPhrase(waitWindow)}`}>
+    <ChartCard title="Processing Time Distribution" sub="Days to approval">
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={data} barCategoryGap="20%" barGap={2}>
           <XAxis
             dataKey="label"
-            tick={{ fontSize: 11, fill: 'var(--mute)' }}
+            tick={{ fontSize: 10, fill: 'var(--mute)' }}
             axisLine={false}
             tickLine={false}
+            interval={0}
           />
           <YAxis
             tick={{ fontSize: 11, fill: 'var(--mute)' }}
@@ -83,6 +84,9 @@ export function ProcessingTimeChart({ data, waitWindow, n }: { data: HistogramDa
           {hasSTEM && <Bar dataKey="STEM" fill={STEM_COLOR} radius={[3, 3, 0, 0]} />}
         </BarChart>
       </ResponsiveContainer>
+      <p className="text-[11px]" style={{ color: 'var(--mute)' }}>
+        {n} cases {windowPhrase(waitWindow)}, in 30-day bins.
+      </p>
     </ChartCard>
   )
 }
@@ -152,12 +156,17 @@ export function MonthlyTrendChart({ data }: { data: TrendDatum[] }) {
           )}
         </LineChart>
       </ResponsiveContainer>
+      <p className="text-[11px]" style={{ color: 'var(--mute)' }}>
+        By month applied. Recent months keep filling in as people post their timelines.
+      </p>
     </ChartCard>
   )
 }
 
 export function WaitTrendChart({ data }: { data: WaitTrendPoint[] }) {
-  const rows = data.map((d) => ({
+  // Start at the first month with enough approvals to plot.
+  const first = data.findIndex((d) => d.median !== null)
+  const rows = data.slice(Math.max(0, first)).map((d) => ({
     month: formatYearMonth(d.ym),
     n: d.n,
     Median: d.median?.value ?? null,

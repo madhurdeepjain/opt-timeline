@@ -187,7 +187,7 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
                   borderBottom: i < pageData.length - 1 ? '1px solid var(--hairline-soft)' : undefined,
                 }}
               >
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 whitespace-nowrap">
                   <span
                     className={cn(
                       'inline-block px-2 py-0.5 rounded-full text-xs font-semibold',
@@ -201,7 +201,7 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
                     {r.normalized_type || r.type || '—'}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--body)' }}>
                   {r.premium_processing === true ? (
                     <span style={{ color: 'var(--primary-pressed)', fontWeight: 600 }}>Yes</span>
                   ) : r.premium_processing === false ? (
@@ -210,48 +210,48 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
                     '—'
                   )}
                 </td>
-                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--body)' }}>
                   {r.pp_upgrade_date ? formatDate(r.pp_upgrade_date) : '—'}
                 </td>
-                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--body)' }}>
                   {formatDate(r.date_applied)}
                 </td>
-                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--body)' }}>
                   {formatDate(r.biometrics_requested_date)}
                 </td>
-                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--body)' }}>
                   {formatDate(r.biometrics_completed_date)}
                 </td>
-                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--body)' }}>
                   {formatDate(r.date_approved)}
                 </td>
-                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--body)' }}>
                   {formatDate(r.date_card_produced)}
                 </td>
-                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--body)' }}>
                   {formatDate(r.date_card_received)}
                 </td>
-                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--body)' }}>
                   {formatDate(r.employment_start_date)}
                 </td>
-                <td className="px-4 py-3 text-sm font-medium" style={{ color: 'var(--ink)' }}>
+                <td className="px-4 py-3 whitespace-nowrap text-sm font-medium" style={{ color: 'var(--ink)' }}>
                   {r.days_to_approval != null ? `${r.days_to_approval}d` : '—'}
                 </td>
-                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--body)' }}>
                   {r.days_to_card != null ? `${r.days_to_card}d` : '—'}
                 </td>
-                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--body)' }}>
                   {r.service_center ?? '—'}
                 </td>
-                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--body)' }}>
                   {r.country_of_citizenship ?? '—'}
                 </td>
-                <td className="px-4 py-3 text-sm" style={{ color: 'var(--body)' }}>
+                <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--body)' }}>
                   {r.created_utc
                     ? new Date(r.created_utc).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                     : '—'}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 whitespace-nowrap">
                   {r.permalink && (
                     <a
                       href={`${r.permalink}`}

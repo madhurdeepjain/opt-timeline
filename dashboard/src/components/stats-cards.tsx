@@ -1,4 +1,4 @@
-import type { DashboardStats, QuantileEstimate } from '@/lib/types'
+import type { DashboardStats, FilterState, QuantileEstimate } from '@/lib/types'
 import { MIN_N } from '@/lib/data'
 import { windowPhrase } from '@/components/wait-window-picker'
 import { formatDate } from '@/lib/utils'
@@ -42,19 +42,28 @@ function fmtEstimate(e: QuantileEstimate | null): string {
   return e ? `${e.value}d` : '—'
 }
 
-export default function StatsCards({ stats, waitWindow }: { stats: DashboardStats; waitWindow: number | null }) {
+export default function StatsCards({
+  stats,
+  waitWindow,
+  premiumFilter,
+}: {
+  stats: DashboardStats
+  waitWindow: number | null
+  premiumFilter: FilterState['premium']
+}) {
   const byKind = [
     stats.medianWaitStandard && `${stats.medianWaitStandard.value}d standard`,
     stats.medianWaitPremium && `${stats.medianWaitPremium.value}d premium`,
     stats.medianWaitUpgraded && `${stats.medianWaitUpgraded.value}d upgraded`,
   ].filter(Boolean)
   const m = stats.medianWait
+  // The split only adds information when there's more than one kind in view.
   const medianSub = m
-    ? `95% CI ${m.lo}–${m.hi}d · ${m.n} cases ${windowPhrase(waitWindow)}` + (byKind.length ? ` · ${byKind.join(' · ')}` : '')
+    ? `likely ${m.lo}–${m.hi}d (95%) · ${m.n} cases ${windowPhrase(waitWindow)}` + (byKind.length > 1 ? ` · ${byKind.join(' · ')}` : '')
     : `Not enough cases ${windowPhrase(waitWindow)} (${stats.recentCount} of ${MIN_N} needed)`
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <Card
         icon={<Users size={14} />}
         label="Total Records"
@@ -70,8 +79,8 @@ export default function StatsCards({ stats, waitWindow }: { stats: DashboardStat
       <Card
         icon={<Zap size={14} />}
         label="Premium Processing"
-        value={`${stats.premiumPct}%`}
-        sub="of records with known processing type, incl. upgrades"
+        value={premiumFilter === 'all' ? `${stats.premiumPct}%` : '—'}
+        sub={premiumFilter === 'all' ? 'of records with known processing type, incl. upgrades' : 'clear the processing filter to compare'}
       />
       <Card
         icon={<CalendarDays size={14} />}

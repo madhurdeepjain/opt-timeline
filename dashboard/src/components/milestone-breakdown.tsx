@@ -11,15 +11,19 @@ interface LabelProps {
   y: number
   width: number
   height: number
-  index: number
+  value: string
 }
 
-function MilestoneLabel({ x, y, width, height, index }: LabelProps, milestoneData: MilestonePoint[]) {
-  const entry = milestoneData[index]
-  if (!entry) return null
+// Recharts' label index skips some bars, so look the row up by its stage name.
+// The text goes past the p75 whisker, not just the bar, so the two never touch.
+function MilestoneLabel({ x, y, width, height, value }: LabelProps, rows: MilestonePoint[]) {
+  const entry = rows.find((r) => r.stage === value)
+  if (!entry || entry.median == null) return null
+  const pxPerDay = entry.median > 0 ? width / entry.median : 0
+  const end = x + Math.max(width, (entry.p75 ?? entry.median) * pxPerDay)
   return (
-    <text x={x + width + 8} y={y + height / 2 + 4} fontSize={11} fill="var(--mute)">
-      {entry.median != null ? `${entry.median}d` : `n=${entry.n}, too few`}
+    <text x={end + 8} y={y + height / 2 + 4} fontSize={11} fill="var(--mute)">
+      {entry.median}d
     </text>
   )
 }
@@ -34,8 +38,10 @@ export default function MilestoneBreakdown({
   waitWindow: number | null
 }) {
   const data = buildMilestoneData(records, since)
-  const maxMedian = Math.max(...data.map((d) => d.median ?? 0), 1)
-  const domainMax = Math.ceil(maxMedian * 1.3 / 10) * 10
+  const shown = data.filter((d) => d.median != null)
+  const hidden = data.filter((d) => d.median == null).map((d) => d.stage)
+  const maxEnd = Math.max(...shown.map((d) => d.p75 ?? d.median ?? 0), 1)
+  const domainMax = Math.ceil((maxEnd * 1.25) / 10) * 10
 
   const total = records.length
   const bioCount = records.filter((r) => r.biometrics_requested_date || r.biometrics_completed_date).length
@@ -46,17 +52,13 @@ export default function MilestoneBreakdown({
     ? `Gray bars apply to biometrics cases (${bioPct}% of this view) — varies by policy period.`
     : `Gray bars apply to biometrics cases (${bioPct}% of this view) — most were waived in this period.`
 
-  const chartData = data.map((d) => ({
-    ...d,
-    median: d.median ?? 0,
-    range: d.range ?? [0, 0],
-  }))
+  const chartData = shown.map((d) => ({ ...d, range: d.range ?? [0, 0] }))
 
-  if (data.every((d) => d.median == null)) return null
+  if (shown.length === 0) return null
 
   return (
     <ChartCard title="How long each step typically takes" sub={`Stage durations · steps finished ${waitWindow === null ? 'at any time' : `in the last ${waitWindow} days`}`}>
-      <ResponsiveContainer width="100%" height={260}>
+      <ResponsiveContainer width="100%" height={chartData.length * 48 + 40}>
         <BarChart
           data={chartData}
           layout="vertical"
@@ -101,12 +103,13 @@ export default function MilestoneBreakdown({
               <Cell key={i} fill={entry.bioOnly ? '#bfc1b7' : 'var(--ink)'} />
             ))}
             <ErrorBar dataKey="range" width={4} strokeWidth={2} stroke="#9b9c92" direction="x" />
-            <LabelList content={(props) => MilestoneLabel(props as unknown as LabelProps, data)} />
+            <LabelList dataKey="stage" content={(props) => MilestoneLabel(props as unknown as LabelProps, shown)} />
           </Bar>
         </BarChart>
       </ResponsiveContainer>
       <p className="text-[11px]" style={{ color: 'var(--mute)' }}>
-        {bioNote} Error bars show the p25–p75 range. Steps with fewer than {MIN_N} cases are left out.
+        {bioNote} Error bars show the p25–p75 range.
+        {hidden.length > 0 && ` Fewer than ${MIN_N} cases, so not shown: ${hidden.join(', ')}.`}
       </p>
     </ChartCard>
   )

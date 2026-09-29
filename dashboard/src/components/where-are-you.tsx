@@ -5,13 +5,21 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceDot,
   LineChart, Line, CartesianGrid, Legend,
 } from 'recharts'
-import type { TimelineRecord } from '@/lib/types'
+import type { TimelineRecord, QuantileEstimate } from '@/lib/types'
 import { buildWaitCurve, waitCurveMaxDay, recentApprovals, sortedWaits, quantileCI, processingKind, MIN_N } from '@/lib/data'
-import { daysBetween, localToday } from '@/lib/utils'
+import { daysBetween, formatShortDate, localToday } from '@/lib/utils'
 import { windowPhrase } from '@/components/wait-window-picker'
 
 const PREFS_KEY = 'way-prefs'
 const JOURNEY_KEY = 'my-journey'
+
+// The journey tracker above may already record an approval for this application.
+function loadJourneyDates(): { applied: string | null; approved: string | null } {
+  try {
+    const j = JSON.parse(localStorage.getItem(JOURNEY_KEY) ?? '{}')
+    return { applied: j.date_applied ?? null, approved: j.date_approved ?? null }
+  } catch { return { applied: null, approved: null } }
+}
 
 function loadPrefs(): { tab?: string; appliedDate?: string; typeFilter?: string | null; premiumFilter?: string | null } {
   if (typeof window === 'undefined') return {}
@@ -60,6 +68,19 @@ function Pill({ active, onClick, children }: { active: boolean; onClick: () => v
   )
 }
 
+function SummaryBox({ value, sub, accent }: { value: string; sub: string; accent?: boolean }) {
+  return (
+    <div className="rounded-md p-3" style={{ backgroundColor: 'var(--surface-soft)' }}>
+      <div className="text-lg font-bold leading-tight" style={{ color: accent ? 'var(--primary)' : 'var(--ink)' }}>
+        {value}
+      </div>
+      <div className="text-[11px] mt-0.5" style={{ color: 'var(--mute)' }}>
+        {sub}
+      </div>
+    </div>
+  )
+}
+
 export default function WhereAreYouCard({
   records,
   waitWindow,
@@ -74,6 +95,7 @@ export default function WhereAreYouCard({
   const [appliedDate, setAppliedDate] = useState<string>(() => loadPrefs().appliedDate ?? '')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>(() => (loadPrefs().typeFilter as TypeFilter) ?? null)
   const [premiumFilter, setPremiumFilter] = useState<PremiumFilter>(() => (loadPrefs().premiumFilter as PremiumFilter) ?? null)
+  const [journeyDates, setJourneyDates] = useState(loadJourneyDates)
   const mountedRef = useRef(false)
 
   useEffect(() => {
@@ -94,6 +116,7 @@ export default function WhereAreYouCard({
     function handleJourneyUpdate(e: Event) {
       const data = (e as CustomEvent).detail as { type?: string | null; premium?: boolean | null; date_applied?: string | null }
       setAppliedDate(data.date_applied ?? '')
+      setJourneyDates({ applied: data.date_applied ?? null, approved: (data as { date_approved?: string | null }).date_approved ?? null })
       setTypeFilter((data.type as TypeFilter) ?? null)
       setPremiumFilter(data.premium === true ? 'premium' : data.premium === false ? 'standard' : null)
     }
@@ -150,11 +173,35 @@ export default function WhereAreYouCard({
     }))
   }, [curve, byKind, maxDay])
 
-  const waitDays = appliedDate ? Math.max(0, daysBetween(appliedDate, today)) : null
-  // Share of recent approvals that took no longer than the user has waited so far.
+  // Already approved (per the journey tracker, same applied date): the wait is final.
+  const approvedOn = appliedDate && journeyDates.approved && journeyDates.applied === appliedDate ? journeyDates.approved : null
+  const waitDays = appliedDate ? Math.max(0, daysBetween(appliedDate, approvedOn ?? today)) : null
+  // Share of recent approvals that took no longer than the user's wait.
   const pctFaster = waitDays != null && enough
     ? Math.round((waits.filter((d) => d <= waitDays).length / waits.length) * 100)
     : null
+  // Percentile lines closer than ~4% of the axis share one label.
+  const quantileLabels = useMemo(() => {
+    const qs: [string, QuantileEstimate | null][] = [['median', p50], ['75%', p75], ['90%', p90]]
+    const groups: { x: number; names: string[]; values: number[] }[] = []
+    let lastX = -Infinity
+    for (const [name, q] of qs) {
+      if (!q) continue
+      const g = groups[groups.length - 1]
+      if (g && q.value - lastX < maxDay * 0.04) {
+        g.names.push(name)
+        g.values.push(q.value)
+      } else groups.push({ x: q.value, names: [name], values: [q.value] })
+      lastX = q.value
+    }
+    // "median 137d", or for a cluster "median–90% 182–186d"
+    return groups.map((g) => ({
+      x: g.x,
+      text: g.names.length === 1
+        ? `${g.names[0]} ${g.values[0]}d`
+        : `${g.names[0]}–${g.names[g.names.length - 1]} ${g.values[0]}–${g.values[g.values.length - 1]}d`,
+    }))
+  }, [p50, p75, p90, maxDay])
   const markerDay = waitDays != null ? Math.min(Math.max(waitDays, 1), maxDay) : null
   const markerPct = markerDay != null ? curve.find((p) => p.day === markerDay)?.pctApproved : undefined
   const daysToP75 = p75 && waitDays != null ? p75.value - waitDays : null
@@ -217,7 +264,7 @@ export default function WhereAreYouCard({
         {/* Type */}
         <div className="flex items-center gap-2">
           <span className="text-[12px] whitespace-nowrap" style={{ color: 'var(--mute)' }}>Type:</span>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1">
             <Pill active={typeFilter === 'OPT'} onClick={() => setTypeFilter(typeFilter === 'OPT' ? null : 'OPT')}>OPT</Pill>
             <Pill active={typeFilter === 'STEM'} onClick={() => setTypeFilter(typeFilter === 'STEM' ? null : 'STEM')}>STEM OPT</Pill>
           </div>
@@ -226,7 +273,7 @@ export default function WhereAreYouCard({
         {/* Premium */}
         <div className="flex items-center gap-2">
           <span className="text-[12px] whitespace-nowrap" style={{ color: 'var(--mute)' }}>Processing:</span>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1">
             <Pill active={premiumFilter === 'standard'} onClick={() => setPremiumFilter(premiumFilter === 'standard' ? null : 'standard')}>Standard</Pill>
             <Pill active={premiumFilter === 'premium'} onClick={() => setPremiumFilter(premiumFilter === 'premium' ? null : 'premium')}>Premium</Pill>
             <Pill active={premiumFilter === 'upgraded'} onClick={() => setPremiumFilter(premiumFilter === 'upgraded' ? null : 'upgraded')}>Upgraded</Pill>
@@ -236,40 +283,32 @@ export default function WhereAreYouCard({
 
       {/* Summary strip */}
       {waitDays != null && enough ? (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-md p-3" style={{ backgroundColor: 'var(--surface-soft)' }}>
-            <div className="text-lg font-bold leading-tight" style={{ color: 'var(--ink)' }}>
-              Day {waitDays}
-            </div>
-            <div className="text-[11px] mt-0.5" style={{ color: 'var(--mute)' }}>
-              since you applied
-            </div>
-          </div>
-          <div className="rounded-md p-3" style={{ backgroundColor: 'var(--surface-soft)' }}>
-            <div className="text-lg font-bold leading-tight" style={{ color: 'var(--ink)' }}>
-              {pctFaster}%
-            </div>
-            <div className="text-[11px] mt-0.5" style={{ color: 'var(--mute)' }}>
-              of recently approved similar cases waited this long or less
-            </div>
-          </div>
-          <div className="rounded-md p-3" style={{ backgroundColor: 'var(--surface-soft)' }}>
-            {p75 && daysToP75 != null && daysToP75 <= 0 ? (
-              <>
-                <div className="text-lg font-bold leading-tight" style={{ color: '#f7a501' }}>Past {p75.value}d</div>
-                <div className="text-[11px] mt-0.5" style={{ color: 'var(--mute)' }}>longer than 3 in 4 recent approvals waited</div>
-              </>
-            ) : (
-              <>
-                <div className="text-lg font-bold leading-tight" style={{ color: 'var(--ink)' }}>
-                  {p75 && daysToP75 != null ? `~${daysToP75}d` : '—'}
-                </div>
-                <div className="text-[11px] mt-0.5" style={{ color: 'var(--mute)' }}>
-                  {p75 ? `until ${p75.value}d, the wait 3 in 4 recent approvals stayed under` : 'too few cases for a 75th percentile'}
-                </div>
-              </>
-            )}
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <SummaryBox
+            value={approvedOn ? `Approved on day ${waitDays}` : `Day ${waitDays}`}
+            sub={approvedOn ? `${formatShortDate(approvedOn)}, from your journey above` : 'since you applied'}
+          />
+          {approvedOn ? (
+            <SummaryBox
+              value={pctFaster === 0 ? `Faster than all ${waits.length}` : `Faster than ${100 - (pctFaster ?? 0)}%`}
+              sub={pctFaster === 0 ? scope.replace(/^\d+ /, '') : `of ${scope}`}
+            />
+          ) : (
+            <SummaryBox value={`${pctFaster}%`} sub={`of ${scope} came within ${waitDays} days`} />
+          )}
+          {approvedOn && p50 ? (
+            <SummaryBox
+              value={waitDays === p50.value ? 'Right at the median' : `${Math.abs(waitDays - p50.value)}d ${waitDays < p50.value ? 'faster' : 'slower'}`}
+              sub={`than the median of ${p50.value}d`}
+            />
+          ) : p75 && daysToP75 != null && daysToP75 <= 0 ? (
+            <SummaryBox value={`Past ${p75.value}d`} sub="longer than 3 in 4 of them waited" accent />
+          ) : (
+            <SummaryBox
+              value={p75 && daysToP75 != null ? `~${daysToP75}d` : '—'}
+              sub={p75 ? `until ${p75.value}d, the wait 3 in 4 of them stayed under` : 'too few cases for a 75th percentile'}
+            />
+          )}
         </div>
       ) : (
         <p className="text-[13px]" style={{ color: 'var(--mute)' }}>
@@ -313,17 +352,25 @@ export default function WhereAreYouCard({
                 labelFormatter={(v) => `Day ${v}`}
               />
               <Area type="monotone" dataKey="pctApproved" stroke="#f7a501" strokeWidth={2} fill="url(#goldGrad)" dot={false} />
-              {[p50, p75, p90].map((q) => q && (
-                <ReferenceLine key={q.value} x={q.value} stroke="var(--hairline)" strokeDasharray="3 3" label={{ value: `${q.value}d`, position: 'insideTopLeft', fontSize: 9, fill: '#9b9c92', offset: 3 }} />
+              {[p50, p75, p90].map((q, i) => q && (
+                <ReferenceLine key={i} x={q.value} stroke="var(--hairline)" strokeDasharray="3 3" />
               ))}
               {markerDay != null && <ReferenceLine x={markerDay} stroke="var(--ink)" strokeWidth={2} />}
+              {quantileLabels.map((g) => (
+                <ReferenceLine
+                  key={g.x}
+                  x={g.x}
+                  stroke="none"
+                  label={{ value: g.text, position: g.x > maxDay * 0.6 ? 'insideTopRight' : 'insideTopLeft', fontSize: 10, fill: 'var(--mute)', offset: 4 }}
+                />
+              ))}
               {markerDay != null && markerPct != null && (
                 <ReferenceDot x={markerDay} y={markerPct} r={5} fill="var(--ink)" stroke="white" strokeWidth={2} />
               )}
             </AreaChart>
           </ResponsiveContainer>
           <p className="text-[11px]" style={{ color: 'var(--mute)' }}>
-            Share of {scope} (2026 threads) that were approved within each number of days. Dashed lines mark the 50th, 75th and 90th percentiles where there are enough cases. Pending cases aren&apos;t included: their wait isn&apos;t known yet.
+            {`Share of ${scope} (2026 threads) that were approved within each number of days. Dashed lines mark the 50th, 75th and 90th percentiles where there are enough cases. Pending cases aren't included: their wait isn't known yet.`}
           </p>
         </>
       ) : (
