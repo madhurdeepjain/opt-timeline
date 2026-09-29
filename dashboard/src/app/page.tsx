@@ -4,7 +4,6 @@ import { useEffect, useState, useMemo } from 'react'
 import type { TimelineRecord, FilterState } from '@/lib/types'
 import { CITIZENSHIP_UNSPECIFIED, SERVICE_CENTER_UNSPECIFIED, DEFAULT_FILTERS } from '@/lib/types'
 import { applyFilters, computeStats, buildHistogramData, buildMonthlyTrendData } from '@/lib/data'
-import { formatDate } from '@/lib/utils'
 import { fetchAllTimeline, fetchMeta } from '@/lib/supabase'
 
 import Nav from '@/components/nav'

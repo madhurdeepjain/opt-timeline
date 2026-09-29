@@ -420,8 +420,6 @@ function CardStatusDropdown({
       ? CARD_STATUS_LABELS[selected[0]]
       : `${CARD_STATUS_LABELS[selected[0]]} +${selected.length - 1}`
 
-  const options: CardStatusKey[] = ['none', 'produced', 'received']
-
   return (
     <div ref={ref} className="relative">
       <button
@@ -852,6 +850,175 @@ function lastDayOfMonth(ym: string): string {
   return `${ym}-${String(day).padStart(2, '0')}`
 }
 
+// Histogram + range slider for the applied-date panel. Keyed on the committed
+// from/to by the parent, so its indices re-initialise from props whenever the
+// panel opens or the range changes externally.
+function RangeSlider({
+  months,
+  from,
+  to,
+  countMap,
+  maxCount,
+  tickIndices,
+  onCommit,
+}: {
+  months: string[]
+  from: string | null
+  to: string | null
+  countMap: Record<string, { count: number; inScope: number }>
+  maxCount: number
+  tickIndices: number[]
+  onCommit: (l: number, r: number) => void
+}) {
+  const n = months.length
+  const trackRef = useRef<HTMLDivElement>(null)
+
+  const [leftIdx, _setLeftIdx] = useState(() => {
+    const l = from ? months.indexOf(from.slice(0, 7)) : -1
+    return l >= 0 ? l : 0
+  })
+  const [rightIdx, _setRightIdx] = useState(() => {
+    const r = to ? months.indexOf(to.slice(0, 7)) : -1
+    return r >= 0 ? r : n - 1
+  })
+  const leftRef = useRef(leftIdx)
+  const rightRef = useRef(rightIdx)
+
+  function setLeft(idx: number) { leftRef.current = idx; _setLeftIdx(idx) }
+  function setRight(idx: number) { rightRef.current = idx; _setRightIdx(idx) }
+
+  function pctFromClientX(clientX: number): number {
+    if (!trackRef.current || n <= 1) return 0
+    const rect = trackRef.current.getBoundingClientRect()
+    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+  }
+
+  function startDrag(side: 'left' | 'right', e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+
+    function onMove(ev: MouseEvent) {
+      const idx = Math.round(pctFromClientX(ev.clientX) * (n - 1))
+      if (side === 'left') setLeft(Math.min(idx, rightRef.current))
+      else setRight(Math.max(idx, leftRef.current))
+    }
+
+    function onUp() {
+      onCommit(leftRef.current, rightRef.current)
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  const leftPct = n > 1 ? (leftIdx / (n - 1)) * 100 : 0
+  const rightPct = n > 1 ? (rightIdx / (n - 1)) * 100 : 100
+
+  return (
+    <>
+    {/* Histogram. Bar height = full-dataset count for the month.
+        Color encodes two dimensions: facet scope (does the month have
+        any records given other active filters) and slider range. */}
+    <div className="flex items-end gap-px h-14">
+      {months.map((month, idx) => {
+        const { count, inScope } = countMap[month] ?? { count: 0, inScope: 0 }
+        const heightPct = (count / maxCount) * 100
+        const inRange = idx >= leftIdx && idx <= rightIdx
+        const bg = count === 0
+          ? 'transparent'
+          : inScope === 0
+          ? 'var(--hairline)'
+          : inRange
+          ? 'var(--ink)'
+          : 'var(--surface-soft)'
+        return (
+          <div
+            key={month}
+            className="flex-1 rounded-[1px] transition-colors duration-75"
+            style={{
+              height: count > 0 ? `${Math.max(heightPct, 8)}%` : '2px',
+              backgroundColor: bg,
+            }}
+          />
+        )
+      })}
+    </div>
+
+    {/* X-axis: baseline + tick marks + labels */}
+    <div className="relative h-5 mb-3">
+      <div className="absolute top-0 left-0 right-0 h-px" style={{ backgroundColor: 'var(--hairline)' }} />
+      {tickIndices.map((idx, ti) => {
+        const isFirst = ti === 0
+        const isLast = ti === tickIndices.length - 1
+        const pct = n > 1 ? (idx / (n - 1)) * 100 : 0
+        return (
+          <div
+            key={months[idx]}
+            className="absolute top-0 flex flex-col"
+            style={{ left: `${pct}%` }}
+          >
+            <div className="w-px h-1" style={{ backgroundColor: 'var(--hairline)' }} />
+            <span
+              className="text-[10px] leading-none whitespace-nowrap mt-0.5 block"
+              style={{
+                color: 'var(--mute)',
+                transform: isFirst ? 'none' : isLast ? 'translateX(-100%)' : 'translateX(-50%)',
+              }}
+            >
+              {fmtMonth(months[idx])}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+
+    {/* Slider */}
+    <div ref={trackRef} className="relative h-5 cursor-default">
+      {/* Background track */}
+      <div
+        className="absolute top-1/2 -translate-y-1/2 w-full h-[3px] rounded-full"
+        style={{ backgroundColor: 'var(--surface-soft)' }}
+      />
+      {/* Selected fill */}
+      <div
+        className="absolute top-1/2 -translate-y-1/2 h-[3px] rounded-full"
+        style={{
+          left: `${leftPct}%`,
+          width: `${rightPct - leftPct}%`,
+          backgroundColor: 'var(--ink)',
+        }}
+      />
+      {/* Left handle */}
+      <div
+        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 cursor-grab"
+        style={{
+          left: `${leftPct}%`,
+          backgroundColor: 'var(--surface-card)',
+          borderColor: 'var(--ink)',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+          zIndex: leftIdx === rightIdx ? 3 : 2,
+        }}
+        onMouseDown={(e) => startDrag('left', e)}
+      />
+      {/* Right handle */}
+      <div
+        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 cursor-grab"
+        style={{
+          left: `${rightPct}%`,
+          backgroundColor: 'var(--surface-card)',
+          borderColor: 'var(--ink)',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+          zIndex: 2,
+        }}
+        onMouseDown={(e) => startDrag('right', e)}
+      />
+    </div>
+    </>
+  )
+}
+
 function AppliedDateFilter({
   from,
   to,
@@ -869,7 +1036,6 @@ function AppliedDateFilter({
 }) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const trackRef = useRef<HTMLDivElement>(null)
   const hasFilter = !!from || !!to
 
   const months = useMemo(() => (min && max ? buildMonths(min, max) : []), [min, max])
@@ -883,23 +1049,6 @@ function AppliedDateFilter({
 
   const maxCount = useMemo(() => Math.max(1, ...distribution.map((d) => d.count)), [distribution])
 
-  const [leftIdx, _setLeftIdx] = useState(0)
-  const [rightIdx, _setRightIdx] = useState(Math.max(0, n - 1))
-  const leftRef = useRef(0)
-  const rightRef = useRef(Math.max(0, n - 1))
-
-  function setLeft(idx: number) { leftRef.current = idx; _setLeftIdx(idx) }
-  function setRight(idx: number) { rightRef.current = idx; _setRightIdx(idx) }
-
-  // Sync local indices when panel opens or external from/to changes
-  useEffect(() => {
-    if (!open || n === 0) return
-    const l = from ? months.indexOf(from.slice(0, 7)) : -1
-    const r = to ? months.indexOf(to.slice(0, 7)) : -1
-    setLeft(l >= 0 ? l : 0)
-    setRight(r >= 0 ? r : n - 1)
-  }, [open, from, to]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // Outside click
   useEffect(() => {
     if (!open) return
@@ -910,12 +1059,6 @@ function AppliedDateFilter({
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  function pctFromClientX(clientX: number): number {
-    if (!trackRef.current || n <= 1) return 0
-    const rect = trackRef.current.getBoundingClientRect()
-    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
-  }
-
   function commit(l: number, r: number) {
     if (l === 0 && r === n - 1) {
       onChange(null, null)
@@ -923,29 +1066,6 @@ function AppliedDateFilter({
       onChange(`${months[l]}-01`, lastDayOfMonth(months[r]))
     }
   }
-
-  function startDrag(side: 'left' | 'right', e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-
-    function onMove(ev: MouseEvent) {
-      const idx = Math.round(pctFromClientX(ev.clientX) * (n - 1))
-      if (side === 'left') setLeft(Math.min(idx, rightRef.current))
-      else setRight(Math.max(idx, leftRef.current))
-    }
-
-    function onUp() {
-      commit(leftRef.current, rightRef.current)
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-    }
-
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
-  }
-
-  const leftPct = n > 1 ? (leftIdx / (n - 1)) * 100 : 0
-  const rightPct = n > 1 ? (rightIdx / (n - 1)) * 100 : 100
 
   const tickIndices = useMemo(() => {
     if (n <= 1) return [0]
@@ -1006,8 +1126,6 @@ function AppliedDateFilter({
             role="button"
             onClick={(e) => {
               e.stopPropagation()
-              setLeft(0)
-              setRight(n - 1)
               onChange(null, null)
             }}
             className="flex items-center opacity-70 hover:opacity-100"
@@ -1029,103 +1147,16 @@ function AppliedDateFilter({
             boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
           }}
         >
-          {/* Histogram. Bar height = full-dataset count for the month.
-              Color encodes two dimensions: facet scope (does the month have
-              any records given other active filters) and slider range. */}
-          <div className="flex items-end gap-px h-14">
-            {months.map((month, idx) => {
-              const { count, inScope } = countMap[month] ?? { count: 0, inScope: 0 }
-              const heightPct = (count / maxCount) * 100
-              const inRange = idx >= leftIdx && idx <= rightIdx
-              const bg = count === 0
-                ? 'transparent'
-                : inScope === 0
-                ? 'var(--hairline)'
-                : inRange
-                ? 'var(--ink)'
-                : 'var(--surface-soft)'
-              return (
-                <div
-                  key={month}
-                  className="flex-1 rounded-[1px] transition-colors duration-75"
-                  style={{
-                    height: count > 0 ? `${Math.max(heightPct, 8)}%` : '2px',
-                    backgroundColor: bg,
-                  }}
-                />
-              )
-            })}
-          </div>
-
-          {/* X-axis: baseline + tick marks + labels */}
-          <div className="relative h-5 mb-3">
-            <div className="absolute top-0 left-0 right-0 h-px" style={{ backgroundColor: 'var(--hairline)' }} />
-            {tickIndices.map((idx, ti) => {
-              const isFirst = ti === 0
-              const isLast = ti === tickIndices.length - 1
-              const pct = n > 1 ? (idx / (n - 1)) * 100 : 0
-              return (
-                <div
-                  key={months[idx]}
-                  className="absolute top-0 flex flex-col"
-                  style={{ left: `${pct}%` }}
-                >
-                  <div className="w-px h-1" style={{ backgroundColor: 'var(--hairline)' }} />
-                  <span
-                    className="text-[10px] leading-none whitespace-nowrap mt-0.5 block"
-                    style={{
-                      color: 'var(--mute)',
-                      transform: isFirst ? 'none' : isLast ? 'translateX(-100%)' : 'translateX(-50%)',
-                    }}
-                  >
-                    {fmtMonth(months[idx])}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Slider */}
-          <div ref={trackRef} className="relative h-5 cursor-default">
-            {/* Background track */}
-            <div
-              className="absolute top-1/2 -translate-y-1/2 w-full h-[3px] rounded-full"
-              style={{ backgroundColor: 'var(--surface-soft)' }}
-            />
-            {/* Selected fill */}
-            <div
-              className="absolute top-1/2 -translate-y-1/2 h-[3px] rounded-full"
-              style={{
-                left: `${leftPct}%`,
-                width: `${rightPct - leftPct}%`,
-                backgroundColor: 'var(--ink)',
-              }}
-            />
-            {/* Left handle */}
-            <div
-              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 cursor-grab"
-              style={{
-                left: `${leftPct}%`,
-                backgroundColor: 'var(--surface-card)',
-                borderColor: 'var(--ink)',
-                boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
-                zIndex: leftIdx === rightIdx ? 3 : 2,
-              }}
-              onMouseDown={(e) => startDrag('left', e)}
-            />
-            {/* Right handle */}
-            <div
-              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 cursor-grab"
-              style={{
-                left: `${rightPct}%`,
-                backgroundColor: 'var(--surface-card)',
-                borderColor: 'var(--ink)',
-                boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
-                zIndex: 2,
-              }}
-              onMouseDown={(e) => startDrag('right', e)}
-            />
-          </div>
+          <RangeSlider
+            key={`${from}|${to}`}
+            months={months}
+            from={from}
+            to={to}
+            countMap={countMap}
+            maxCount={maxCount}
+            tickIndices={tickIndices}
+            onCommit={commit}
+          />
 
           {/* Date inputs */}
           <div className="flex items-center gap-2 mt-3">

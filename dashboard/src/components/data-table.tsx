@@ -60,6 +60,51 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
   )
 }
 
+const SORTABLE_COLUMNS: { col: SortKey; label: string }[] = [
+  { col: 'normalized_type', label: 'Type' },
+  { col: 'premium_processing', label: 'Premium' },
+  { col: 'pp_upgrade_date', label: 'PP Upgraded' },
+  { col: 'date_applied', label: 'Applied' },
+  { col: 'biometrics_requested_date', label: 'Bio Requested' },
+  { col: 'biometrics_completed_date', label: 'Bio Completed' },
+  { col: 'date_approved', label: 'Approved' },
+  { col: 'date_card_produced', label: 'Card Produced' },
+  { col: 'date_card_received', label: 'Card Received' },
+  { col: 'employment_start_date', label: 'OPT Start' },
+  { col: 'days_to_approval', label: 'Days → Approval' },
+  { col: 'days_to_card', label: 'Days → Card' },
+  { col: 'service_center', label: 'Service Ctr' },
+  { col: 'country_of_citizenship', label: 'Citizenship' },
+  { col: 'created_utc', label: 'Posted' },
+]
+
+function Th({
+  col,
+  label,
+  sortKey,
+  sortDir,
+  onSort,
+}: {
+  col: SortKey
+  label: string
+  sortKey: SortKey
+  sortDir: SortDir
+  onSort: (key: SortKey) => void
+}) {
+  return (
+    <th
+      className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest cursor-pointer select-none whitespace-nowrap"
+      style={{ color: 'var(--mute)' }}
+      onClick={() => onSort(col)}
+    >
+      <span className="flex items-center gap-1">
+        {label}
+        <SortIcon col={col} sortKey={sortKey} sortDir={sortDir} />
+      </span>
+    </th>
+  )
+}
+
 export default function DataTable({ records }: { records: TimelineRecord[] }) {
   const [sortKey, setSortKey] = useState<SortKey>('date_applied')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
@@ -90,21 +135,6 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
       setSortDir('desc')
     }
     setPage(0)
-  }
-
-  function Th({ col, label }: { col: SortKey; label: string }) {
-    return (
-      <th
-        className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest cursor-pointer select-none whitespace-nowrap"
-        style={{ color: 'var(--mute)' }}
-        onClick={() => handleSort(col)}
-      >
-        <span className="flex items-center gap-1">
-          {label}
-          <SortIcon col={col} sortKey={sortKey} sortDir={sortDir} />
-        </span>
-      </th>
-    )
   }
 
   return (
@@ -138,21 +168,9 @@ export default function DataTable({ records }: { records: TimelineRecord[] }) {
         <table className="w-full text-sm">
           <thead>
             <tr style={{ borderBottom: '1px solid var(--hairline)' }}>
-              <Th col="normalized_type" label="Type" />
-              <Th col="premium_processing" label="Premium" />
-              <Th col="pp_upgrade_date" label="PP Upgraded" />
-              <Th col="date_applied" label="Applied" />
-              <Th col="biometrics_requested_date" label="Bio Requested" />
-              <Th col="biometrics_completed_date" label="Bio Completed" />
-              <Th col="date_approved" label="Approved" />
-              <Th col="date_card_produced" label="Card Produced" />
-              <Th col="date_card_received" label="Card Received" />
-              <Th col="employment_start_date" label="OPT Start" />
-              <Th col="days_to_approval" label="Days → Approval" />
-              <Th col="days_to_card" label="Days → Card" />
-              <Th col="service_center" label="Service Ctr" />
-              <Th col="country_of_citizenship" label="Citizenship" />
-              <Th col="created_utc" label="Posted" />
+              {SORTABLE_COLUMNS.map(({ col, label }) => (
+                <Th key={col} col={col} label={label} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+              ))}
               <th
                 className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest"
                 style={{ color: 'var(--mute)' }}

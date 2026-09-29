@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { useMounted } from '@/lib/use-mounted'
 import { Check, ChevronLeft, Pencil } from 'lucide-react'
 import { formatShortDate, daysBetween } from '@/lib/utils'
 import confetti from 'canvas-confetti'
@@ -328,17 +329,18 @@ function Wizard({
 }
 
 export default function UserJourney() {
-  const [journey, setJourney] = useState<JourneyData | null | undefined>(undefined)
+  const mounted = useMounted()
+  if (!mounted) return null
+  return <UserJourneyCard />
+}
+
+// Client-only: mounted after hydration, so it can read localStorage on init.
+function UserJourneyCard() {
+  const [journey, setJourney] = useState<JourneyData | null>(loadInitialJourney)
   const [wayPrefsDefaults, setWayPrefsDefaults] = useState<Partial<JourneyData>>({})
   const [started, setStarted] = useState(false)
   const [editing, setEditing] = useState(false)
   const [wizardKey, setWizardKey] = useState(0)
-
-  useEffect(() => {
-    setJourney(loadInitialJourney())
-  }, [])
-
-  if (journey === undefined) return null
 
   function handleComplete(data: JourneyData) {
     saveJourney(data)

@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine, LabelList } from 'recharts'
 import type { TimelineRecord } from '@/lib/types'
 import { buildCountryData } from '@/lib/data'
-import { ChartCard } from '@/components/charts'
 import { median } from '@/lib/utils'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 

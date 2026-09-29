@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
+import { useMounted } from '@/lib/use-mounted'
 
 type Theme = 'light' | 'dark'
 
@@ -40,22 +41,21 @@ function MoonIcon() {
 }
 
 export default function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>('light')
-  const [mounted, setMounted] = useState(false)
-  const [hovered, setHovered] = useState(false)
+  const mounted = useMounted()
+  if (!mounted) return <div style={{ width: 32, height: 32 }} />
+  return <ThemeToggleButton />
+}
 
-  useEffect(() => {
-    setTheme(resolve())
-    setMounted(true)
-  }, [])
+// Client-only: mounted after hydration, so it can read localStorage on init.
+function ThemeToggleButton() {
+  const [theme, setTheme] = useState<Theme>(resolve)
+  const [hovered, setHovered] = useState(false)
 
   function toggle() {
     const next: Theme = theme === 'light' ? 'dark' : 'light'
     setTheme(next)
     apply(next)
   }
-
-  if (!mounted) return <div style={{ width: 32, height: 32 }} />
 
   return (
     <div
