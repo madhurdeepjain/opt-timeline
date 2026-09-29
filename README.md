@@ -29,6 +29,8 @@ Almost nobody follows the template exactly. [`parser.py`](scraper/src/reddit_opt
 
 People also post the same application more than once (status updates, reposts in both threads). Each author's posts are merged into one record per application unless they contradict each other (different type, or dates more than a week apart).
 
+If someone deletes their comment or account, their row keeps its dates but loses everything that points back to them: username, link, text.
+
 ## How the numbers work
 
 A wait time is only known once someone reports their approval, so every wait statistic describes **cases approved in a recent window** (60 days by default; you can change it). This is also how USCIS reports its own processing times. Pending cases can't simply be added in: people tend to come back and post when they're approved and go quiet while they wait, so a silent "pending" post isn't evidence of still waiting.

@@ -45,7 +45,7 @@ Flags:
 
 A full fetch takes about 20 minutes, most of it waiting on Reddit's rate limit (roughly 100 requests per 10 minutes).
 
-Merge policy: freshly fetched comments overwrite stored ones, so edits (for example an approval date added later) are picked up. Comments that no longer come back from Reddit are kept. Then each author's posts are merged into one record per application (see `merge_by_author` in `exporter.py`), and rows merged away are deleted from Supabase.
+Merge policy: freshly fetched comments overwrite stored ones, so edits (for example an approval date added later) are picked up. Comments that no longer come back from Reddit are kept. Then each author's posts are merged into one record per application (see `merge_by_author` in `exporter.py`), and rows merged away are deleted from Supabase. When Reddit confirms a comment was deleted or removed (or its account deleted), its row is de-linked (see `anonymize` in `exporter.py`): the username, comment link, text and free-text fields are dropped, timestamps are cut to the day, and it gets an id Reddit can't be traced from. The timeline dates stay, so the statistics don't lose the case.
 
 Parser tests: `uv run python -m unittest discover -s tests`. The daily job runs them before scraping.
 

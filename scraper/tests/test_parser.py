@@ -6,7 +6,7 @@ Cases come from real comments that earlier parser versions got wrong.
 import unittest
 from datetime import datetime, timezone
 
-from reddit_opt_scraper.exporter import merge_by_author
+from reddit_opt_scraper.exporter import ANON_PREFIX, merge, merge_by_author
 from reddit_opt_scraper.parser import parse_comment, parse_date, validate_dates
 
 
@@ -134,6 +134,38 @@ class MergeByAuthor(unittest.TestCase):
             post("3", "2025-06-01T00:00:00+00:00", date_applied="2025-05-20"),
         ])
         self.assertEqual(len(out), 3)
+
+
+class DeletedComments(unittest.TestCase):
+    def linked(self, cid, **fields):
+        return post(cid, "2026-04-01T13:45:10+00:00", author="someone", raw_text="Date Applied: 03/01/2026",
+                    permalink=f"https://reddit.com/r/f1visa/comments/1r6p9k0/opt_megathread/{cid}/",
+                    biometrics_location="ASC Boston", type="Initial OPT", date_applied="2026-03-01", **fields)
+
+    def test_deleted_application_is_delinked_but_kept(self):
+        [r] = merge_by_author([self.linked("abc", date_approved="2026-05-01")], gone=frozenset({"abc"}))
+        self.assertTrue(r["comment_id"].startswith(ANON_PREFIX))
+        self.assertNotIn("abc", r["comment_id"])
+        self.assertEqual((r["author"], r["raw_text"], r["type"], r["biometrics_location"]), (None, "", None, None))
+        self.assertEqual(r["permalink"], "https://reddit.com/r/f1visa/comments/1r6p9k0/")  # thread filter still works
+        self.assertEqual(r["created_utc"], "2026-04-01T00:00:00+00:00")
+        self.assertEqual((r["date_applied"], r["date_approved"]), ("2026-03-01", "2026-05-01"))
+
+    def test_application_with_a_live_post_stays_linked_to_it(self):
+        deleted = self.linked("old", created_utc="2026-06-01T00:00:00+00:00", last_seen_utc="2026-06-01T00:00:00+00:00",
+                              date_approved="2026-05-30")
+        live = self.linked("new", created_utc="2026-04-01T00:00:00+00:00", last_seen_utc="2026-04-01T00:00:00+00:00")
+        [r] = merge_by_author([deleted, live], gone=frozenset({"old"}))
+        self.assertEqual((r["comment_id"], r["author"], r["date_approved"]), ("new", "someone", "2026-05-30"))
+        self.assertIn("/new/", r["permalink"])
+
+    def test_rerun_is_stable(self):
+        [first] = merge_by_author([self.linked("abc")], gone=frozenset({"abc"}))
+        [again] = merge_by_author([self.linked("abc")], gone=frozenset({"abc"}))
+        self.assertEqual(first["comment_id"], again["comment_id"])
+        # A de-linked row stored last run passes through untouched next run.
+        [kept] = merge_by_author(merge({first["comment_id"]: first}, []))
+        self.assertEqual(kept, first)
 
 
 if __name__ == "__main__":

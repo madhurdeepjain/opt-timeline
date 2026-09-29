@@ -1,6 +1,10 @@
 """Read/write the timeline CSV."""
 
 import csv
+import hashlib
+import hmac
+import os
+import re
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
@@ -137,7 +141,7 @@ def _compatible(app: dict, r: dict) -> bool:
     return _days_apart(_touched(app), r.get("created_utc") or _touched(app)) <= _MAX_SPAN_DAYS
 
 
-def merge_by_author(records: list[dict]) -> list[dict]:
+def merge_by_author(records: list[dict], gone: frozenset[str] = frozenset()) -> list[dict]:
     """Collapse each author's posts about the same application into one record.
 
     People post status updates as new comments ("approved today!") and repost
@@ -145,8 +149,12 @@ def merge_by_author(records: list[dict]) -> list[dict]:
     an applied date. Each post joins the author's most recently touched
     application it doesn't contradict (see _compatible); otherwise it starts a
     new one. Within an application the most recently touched post wins on each
-    field and fills gaps from the others. The merged record keeps that post's
-    comment_id and permalink, and the latest last_seen_utc.
+    field and fills gaps from the others. The merged record takes its
+    comment_id, permalink and text from the latest post that still exists, and
+    the latest last_seen_utc.
+
+    ``gone`` holds comment ids confirmed deleted or removed on Reddit. An
+    application whose posts are all gone is kept, de-linked (see anonymize).
     """
     by_author: dict[str, list[dict]] = defaultdict(list)
     result: list[dict] = []
@@ -165,31 +173,81 @@ def merge_by_author(records: list[dict]) -> list[dict]:
             if candidates:
                 i = max(candidates, key=lambda j: _touched(views[j]))
                 apps[i].append(r)
-                views[i] = _combine(apps[i])
+                views[i] = _combine(apps[i], gone)
             else:
                 apps.append([r])
                 views.append(dict(r))
         for app, view in zip(apps, views):
-            if len(app) == 1:
-                result.append(app[0])
-                continue
-            as_of = datetime.fromisoformat(view["last_seen_utc"]) if view.get("last_seen_utc") else None
-            merged = validate_dates(view, as_of)
-            if merged is not None:
-                result.append(merged)
+            if len(app) > 1:
+                as_of = datetime.fromisoformat(view["last_seen_utc"]) if view.get("last_seen_utc") else None
+                view = validate_dates(view, as_of)
+                if view is None:
+                    continue
+            result.append(anonymize(view) if all(p["comment_id"] in gone for p in app) else view)
     return result
 
 
-def _combine(posts: list[dict]) -> dict:
+_LINK_FIELDS = ("comment_id", "permalink", "raw_text", "created_utc", "subreddit")
+
+
+def _combine(posts: list[dict], gone: frozenset[str]) -> dict:
     ordered = sorted(posts, key=_touched)
     merged = dict(ordered[-1])
     for earlier in reversed(ordered[:-1]):
         for k, v in earlier.items():
             if merged.get(k) in (None, "") and v not in (None, ""):
                 merged[k] = v
+    # Point the record at a post that still exists, so its live posts keep
+    # joining this record instead of reappearing as a separate one.
+    live = [p for p in ordered if p["comment_id"] not in gone]
+    if live and merged["comment_id"] in gone:
+        merged.update({k: live[-1].get(k) for k in _LINK_FIELDS})
     seen = [p["last_seen_utc"] for p in posts if p.get("last_seen_utc")]
     merged["last_seen_utc"] = max(seen) if seen else None
     return compute_derived(merged)
+
+
+def anonymize(record: dict) -> dict:
+    """Strip everything that points back to a deleted comment or its author.
+
+    Keeps the timeline fields for the statistics; drops the username, the comment
+    link (the thread link stays, for the thread filter) and text, free-text
+    fields, and timestamps finer than a day. The new id is an HMAC of the Reddit
+    id keyed with the Supabase secret key: a plain hash could be reversed
+    (comment ids are sequential), and a stable id keeps a rerun after a failed
+    save from creating a duplicate. Already-anonymized records pass through.
+    """
+    if record["comment_id"].startswith(ANON_PREFIX):
+        return record
+    r = dict(record)
+    thread = _THREAD_URL.match(r.get("permalink") or "")
+    r.update({
+        "comment_id": ANON_PREFIX + _anon_id(r["comment_id"]),
+        "author": None,
+        "permalink": thread.group(0) if thread else None,
+        "raw_text": "",
+        "type": None,
+        "biometrics_location": None,
+        "created_utc": _day(r.get("created_utc")),
+        "last_seen_utc": _day(r.get("last_seen_utc")),
+    })
+    return r
+
+
+ANON_PREFIX = "anon-"
+_THREAD_URL = re.compile(r"^https?://[^/]+/r/[^/]+/comments/[a-z0-9]+/")
+
+
+def _anon_id(comment_id: str) -> str:
+    key = os.environ.get("SUPABASE_SECRET_KEY", "").encode() or _RUN_KEY
+    return hmac.new(key, comment_id.encode(), hashlib.sha256).hexdigest()[:16]
+
+
+_RUN_KEY = os.urandom(32)  # CSV mode without Supabase: random, but stable within a run
+
+
+def _day(ts: str | None) -> str | None:
+    return f"{ts[:10]}T00:00:00+00:00" if ts else None
 
 
 def save(records: list[dict], path: Path) -> None:

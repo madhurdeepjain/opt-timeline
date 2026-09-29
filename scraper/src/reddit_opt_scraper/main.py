@@ -17,9 +17,9 @@ from rich.table import Table
 
 from . import supastore
 from .config import THREADS, IGNORED_THREADS, DEFAULT_OUTPUT, REQUEST_DELAY
-from .fetcher import fetch_all_comments, find_new_megathreads
+from .fetcher import fetch_all_comments, find_new_megathreads, is_gone, lookup_comments
 from .parser import parse_comment, has_template_data, validate_dates
-from .exporter import load_existing, merge, merge_by_author, save
+from .exporter import ANON_PREFIX, load_existing, merge, merge_by_author, save
 
 # Load credentials from a local .env (Supabase + Reddit auth) if present.
 # In CI these come from the environment/secrets, so a missing file is fine.
@@ -114,6 +114,8 @@ def cli(output: str, no_merge: bool, force_csv: bool, assume_yes: bool, check_th
         console.print(f"Loaded [bold]{len(existing)}[/bold] existing records")
 
     all_fresh: list[dict] = []
+    fetched: set[str] = set()  # every top-level comment id Reddit returned
+    gone: set[str] = set()     # confirmed deleted/removed (comment or account)
     failed_threads: list[str] = []
 
     reddit_cookie = os.environ.get("REDDIT_COOKIE") or None
@@ -140,6 +142,9 @@ def cli(output: str, no_merge: bool, force_csv: bool, assume_yes: bool, check_th
                 try:
                     for comment in fetch_all_comments(thread, client, cookie=reddit_cookie, token=reddit_token):
                         seen += 1
+                        fetched.add(comment["id"])
+                        if is_gone(comment):
+                            gone.add(comment["id"])
                         prog.update(task, description=f"Comments fetched: {seen}")
                         rec = _build_record(comment, thread)
                         if rec:
@@ -156,6 +161,15 @@ def cli(output: str, no_merge: bool, force_csv: bool, assume_yes: bool, check_th
                     traceback.print_exc()
                     failed_threads.append(post_id)
 
+        # Stored rows whose comment didn't come back: ask Reddit about each one.
+        # Only a positive "deleted/removed" answer de-links a row; a failed fetch
+        # or lookup leaves it as it is.
+        unseen = [cid for cid in existing if cid not in fetched and not cid.startswith(ANON_PREFIX)]
+        if unseen:
+            console.print(f"\nChecking {len(unseen)} stored comments that weren't fetched…")
+            found = lookup_comments(client, unseen, cookie=reddit_cookie, token=reddit_token)
+            gone |= {cid for cid, c in found.items() if is_gone(c)}
+
     if failed_threads:
         console.print(f"\n[bold yellow]⚠ Skipped threads: {', '.join(failed_threads)}[/bold yellow]")
 
@@ -171,8 +185,11 @@ def cli(output: str, no_merge: bool, force_csv: bool, assume_yes: bool, check_th
     tbl.add_row("Existing records", str(len(existing)))
     merged = merge(existing, all_fresh)
     tbl.add_row("After merge", str(len(merged)))
-    final = merge_by_author(merged)
+    final = merge_by_author(merged, frozenset(gone))
     tbl.add_row("After merging each author's posts", str(len(final)))
+    anon_before = sum(1 for cid in existing if cid.startswith(ANON_PREFIX))
+    anon_after = sum(1 for r in final if r["comment_id"].startswith(ANON_PREFIX))
+    tbl.add_row("De-linked (deleted on Reddit)", f"{anon_after} ({anon_after - anon_before:+d})")
     console.print(tbl)
 
     if use_supabase:

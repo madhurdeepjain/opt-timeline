@@ -93,6 +93,36 @@ def _extract_top_level(listing_children: list) -> tuple[list[dict], list[str]]:
     return comments, more_ids
 
 
+def is_gone(comment: dict) -> bool:
+    """True when the author deleted the comment or their account, or a mod removed it."""
+    return comment.get("author") == "[deleted]" or comment.get("body") in ("[deleted]", "[removed]")
+
+
+def _fetch_by_ids(client: httpx.Client, ids: list[str], headers: dict, token: str | None) -> dict[str, dict]:
+    """Top-level comments by id via api/info (100 per call). Missing ids are omitted."""
+    url = ("https://oauth.reddit.com" if token else "https://www.reddit.com") + ("/api/info" if token else "/api/info.json")
+    out: dict[str, dict] = {}
+    for i in range(0, len(ids), 100):
+        try:
+            data = _get(client, url, params={"id": ",".join(f"t1_{c}" for c in ids[i : i + 100]), "raw_json": 1}, headers=headers)
+        except Exception as exc:
+            print(f"  [warn] api/info lookup failed: {exc}", flush=True)
+            continue
+        for t in data.get("data", {}).get("children", []):
+            d = t["data"]
+            if d.get("parent_id", "").startswith("t3_"):
+                out[d["id"]] = d
+        time.sleep(REQUEST_DELAY)
+    return out
+
+
+def lookup_comments(
+    client: httpx.Client, ids: list[str], *, cookie: str | None = None, token: str | None = None
+) -> dict[str, dict]:
+    """Current state of specific comments, keyed by id (ids Reddit doesn't return are omitted)."""
+    return _fetch_by_ids(client, ids, _build_headers(cookie, token), token)
+
+
 def _fetch_more_children(
     post_id: str,
     more_ids: list[str],
@@ -160,28 +190,13 @@ def _fetch_more_children(
         time.sleep(REQUEST_DELAY)
 
     # morechildren silently drops some ids. Most are deleted/removed comments, but
-    # not all, so look the rest up directly (api/info takes 100 ids per call).
+    # not all, so look the rest up directly.
     missing = sorted(set(attempts) - got)
     if missing:
         print(f"  [info] looking up {len(missing)} ids morechildren didn't return…", flush=True)
-        info_url = ("https://oauth.reddit.com" if token else "https://www.reddit.com") + (
-            "/api/info" if token else "/api/info.json"
-        )
-        recovered = 0
-        for i in range(0, len(missing), batch_size):
-            ids = ",".join(f"t1_{cid}" for cid in missing[i : i + batch_size])
-            try:
-                data = _get(client, info_url, params={"id": ids, "raw_json": 1}, headers=headers)
-            except Exception as exc:
-                print(f"  [warn] api/info lookup failed: {exc}", flush=True)
-                continue
-            for t in data.get("data", {}).get("children", []):
-                d = t["data"]
-                if d.get("parent_id", "").startswith("t3_") and d.get("body") not in ("[deleted]", "[removed]"):
-                    all_comments.append(d)
-                    recovered += 1
-            time.sleep(REQUEST_DELAY)
-        print(f"  [info] recovered {recovered}; the other {len(missing) - recovered} are deleted or removed", flush=True)
+        found = [d for d in _fetch_by_ids(client, missing, headers, token).values() if not is_gone(d)]
+        all_comments.extend(found)
+        print(f"  [info] recovered {len(found)}; the other {len(missing) - len(found)} are deleted or removed", flush=True)
     return all_comments
 
 
