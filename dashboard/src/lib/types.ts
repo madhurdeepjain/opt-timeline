@@ -55,7 +55,7 @@ export const SERVICE_CENTER_UNSPECIFIED = '__sc_unspecified__'
 export interface FilterState {
   type: 'all' | 'OPT' | 'STEM' | 'unknown'
   premium: 'all' | 'standard' | 'premium' | 'upgraded' | 'any_premium' | 'unknown'
-  approved: 'all' | 'yes' | 'no' | 'unknown'
+  approved: 'all' | 'yes' | 'no'
   cardStatus: ('none' | 'produced' | 'received')[]
   rfie: 'all' | 'yes' | 'no'
   banStatus: ('restricted' | 'non_restricted' | 'unknown')[]
@@ -82,10 +82,24 @@ export const DEFAULT_FILTERS: FilterState = {
   appliedDateTo: null,
 }
 
-export interface SurvivalPoint {
+export interface QuantileEstimate {
+  value: number
+  /** 95% confidence interval bounds */
+  lo: number
+  hi: number
+  n: number
+}
+
+export interface WaitCurvePoint {
   day: number
   pctApproved: number
-  pctPending: number
+}
+
+export interface WaitTrendPoint {
+  ym: string
+  n: number
+  median: QuantileEstimate | null
+  p75: QuantileEstimate | null
 }
 
 export interface FunnelStage {
@@ -116,10 +130,16 @@ export interface DashboardStats {
   total: number
   optCount: number
   stemCount: number
-  approvedCount: number
-  medianDaysToApproval: number | null
-  medianDaysStandard: number | null
-  medianDaysPremium: number | null
+  /** approvals inside the wait-time window */
+  recentCount: number
+  medianWait: QuantileEstimate | null
+  medianWaitStandard: QuantileEstimate | null
+  medianWaitPremium: QuantileEstimate | null
+  medianWaitUpgraded: QuantileEstimate | null
   premiumPct: number
   latestAppliedDate: string | null
 }
+
+/** Wait-time window options, in days; null = every approval. */
+export const WAIT_WINDOWS: (number | null)[] = [30, 60, 90, 180, null]
+export const DEFAULT_WAIT_WINDOW = 60

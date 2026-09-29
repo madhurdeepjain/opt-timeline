@@ -3,24 +3,16 @@
 import { useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine, LabelList } from 'recharts'
 import type { TimelineRecord } from '@/lib/types'
-import { buildCountryData } from '@/lib/data'
-import { median } from '@/lib/utils'
+import { buildCountryData, quantileCI, sortedWaits, MIN_N } from '@/lib/data'
+import { windowPhrase } from '@/components/wait-window-picker'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 
-export default function CountryBreakdown({ records }: { records: TimelineRecord[] }) {
+export default function CountryBreakdown({ recent, waitWindow }: { recent: TimelineRecord[]; waitWindow: number | null }) {
   const [expanded, setExpanded] = useState(false)
 
-  const data = buildCountryData(records, 3)
-  const overallMedian = (() => {
-    const days = records
-      .map((r) => r.days_to_approval)
-      .filter((d): d is number => typeof d === 'number' && d > 0 && d < 400)
-    return median(days)
-  })()
-
-  const totalCountryRecords = records.filter(
-    (r) => r.country_of_citizenship && typeof r.days_to_approval === 'number' && r.days_to_approval > 0
-  ).length
+  const data = buildCountryData(recent)
+  const overallMedian = quantileCI(sortedWaits(recent), 0.5)?.value ?? null
+  const totalCountryRecords = recent.filter((r) => r.country_of_citizenship).length
 
   if (data.length < 2) return null
 
@@ -89,7 +81,7 @@ export default function CountryBreakdown({ records }: { records: TimelineRecord[
                   return [`${p.median}d median · ${p.p25}–${p.p75}d range · n=${p.n}`, '']
                 }}
               />
-              {overallMedian && (
+              {overallMedian != null && (
                 <ReferenceLine
                   x={overallMedian}
                   stroke="var(--hairline)"
@@ -99,7 +91,7 @@ export default function CountryBreakdown({ records }: { records: TimelineRecord[
               )}
               <Bar dataKey="median" radius={[0, 3, 3, 0]} barSize={16}>
                 {data.map((entry, i) => (
-                  <Cell key={i} fill={entry.n >= 10 ? 'var(--ink)' : '#9b9c92'} opacity={entry.n >= 10 ? 1 : 0.75} />
+                  <Cell key={i} fill="var(--ink)" />
                 ))}
                 <LabelList
                   content={(props) => {
@@ -119,7 +111,7 @@ export default function CountryBreakdown({ records }: { records: TimelineRecord[
             </BarChart>
           </ResponsiveContainer>
           <p className="text-[11px]" style={{ color: 'var(--mute)' }}>
-            Only {totalCountryRecords} of {records.length} records include country of citizenship. Lighter bars have fewer than 10 cases — treat those as rough estimates.
+            {totalCountryRecords} of {recent.length} cases {windowPhrase(waitWindow)} include country of citizenship. Countries with fewer than {MIN_N} of them are left out.
           </p>
         </div>
       )}

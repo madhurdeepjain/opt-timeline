@@ -8,27 +8,17 @@ export function cn(...inputs: ClassValue[]) {
 export function formatDate(dateStr: string | null): string {
   if (!dateStr) return '—'
   const d = new Date(dateStr + 'T12:00:00Z')
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
 
 export function formatShortDate(dateStr: string | null): string {
   if (!dateStr) return '—'
   const d = new Date(dateStr + 'T12:00:00Z')
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
-export function median(values: number[]): number | null {
-  if (values.length === 0) return null
-  const sorted = [...values].sort((a, b) => a - b)
-  const mid = Math.floor(sorted.length / 2)
-  return sorted.length % 2 !== 0
-    ? sorted[mid]
-    : Math.round((sorted[mid - 1] + sorted[mid]) / 2)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
 
 export function toYearMonth(dateStr: string): string {
-  const d = new Date(dateStr + 'T12:00:00Z')
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  return dateStr.slice(0, 7)
 }
 
 export function formatYearMonth(ym: string): string {
@@ -42,4 +32,17 @@ export function daysBetween(a: string, b: string): number {
     (new Date(b + 'T12:00:00Z').getTime() - new Date(a + 'T12:00:00Z').getTime()) /
     (1000 * 60 * 60 * 24)
   )
+}
+
+/** ISO date `days` after (or before, if negative) an ISO date. */
+export function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + 'T12:00:00Z')
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Today's date in the viewer's own timezone, as YYYY-MM-DD. */
+export function localToday(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }

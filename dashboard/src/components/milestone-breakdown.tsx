@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ErrorB
 import type { TimelineRecord, MilestonePoint } from '@/lib/types'
 import { buildMilestoneData } from '@/lib/data'
 import { ChartCard } from '@/components/charts'
+import { MIN_N } from '@/lib/data'
 
 interface LabelProps {
   x: number
@@ -15,16 +16,24 @@ interface LabelProps {
 
 function MilestoneLabel({ x, y, width, height, index }: LabelProps, milestoneData: MilestonePoint[]) {
   const entry = milestoneData[index]
-  if (!entry?.median) return null
+  if (!entry) return null
   return (
     <text x={x + width + 8} y={y + height / 2 + 4} fontSize={11} fill="var(--mute)">
-      {entry.median}d
+      {entry.median != null ? `${entry.median}d` : `n=${entry.n}, too few`}
     </text>
   )
 }
 
-export default function MilestoneBreakdown({ records }: { records: TimelineRecord[] }) {
-  const data = buildMilestoneData(records)
+export default function MilestoneBreakdown({
+  records,
+  since,
+  waitWindow,
+}: {
+  records: TimelineRecord[]
+  since: string | null
+  waitWindow: number | null
+}) {
+  const data = buildMilestoneData(records, since)
   const maxMedian = Math.max(...data.map((d) => d.median ?? 0), 1)
   const domainMax = Math.ceil(maxMedian * 1.3 / 10) * 10
 
@@ -43,10 +52,10 @@ export default function MilestoneBreakdown({ records }: { records: TimelineRecor
     range: d.range ?? [0, 0],
   }))
 
-  if (data.every((d) => d.n === 0)) return null
+  if (data.every((d) => d.median == null)) return null
 
   return (
-    <ChartCard title="How long each step typically takes" sub="Stage Durations">
+    <ChartCard title="How long each step typically takes" sub={`Stage durations · steps finished ${waitWindow === null ? 'at any time' : `in the last ${waitWindow} days`}`}>
       <ResponsiveContainer width="100%" height={260}>
         <BarChart
           data={chartData}
@@ -78,7 +87,7 @@ export default function MilestoneBreakdown({ records }: { records: TimelineRecor
             content={({ active, payload }) => {
               if (!active || !payload?.[0]) return null
               const p = payload[0].payload as MilestonePoint
-              if (!p.median) return null
+              if (p.median == null) return null
               return (
                 <div style={{ backgroundColor: 'var(--surface-card)', border: '1px solid var(--hairline)', borderRadius: '6px', fontSize: '12px', padding: '8px 12px' }}>
                   <div style={{ fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{p.stage}</div>
@@ -97,7 +106,7 @@ export default function MilestoneBreakdown({ records }: { records: TimelineRecor
         </BarChart>
       </ResponsiveContainer>
       <p className="text-[11px]" style={{ color: 'var(--mute)' }}>
-        {bioNote} Error bars show the p25–p75 range.
+        {bioNote} Error bars show the p25–p75 range. Steps with fewer than {MIN_N} cases are left out.
       </p>
     </ChartCard>
   )

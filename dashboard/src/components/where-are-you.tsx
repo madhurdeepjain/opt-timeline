@@ -6,10 +6,9 @@ import {
   LineChart, Line, CartesianGrid, Legend,
 } from 'recharts'
 import type { TimelineRecord } from '@/lib/types'
-import { buildSurvivalCurve } from '@/lib/data'
-import { daysBetween } from '@/lib/utils'
-
-const TODAY = new Date().toISOString().slice(0, 10)
+import { buildWaitCurve, waitCurveMaxDay, recentApprovals, sortedWaits, quantileCI, processingKind, MIN_N } from '@/lib/data'
+import { daysBetween, localToday } from '@/lib/utils'
+import { windowPhrase } from '@/components/wait-window-picker'
 
 const PREFS_KEY = 'way-prefs'
 const JOURNEY_KEY = 'my-journey'
@@ -44,7 +43,7 @@ const TOOLTIP_STYLE = {
 }
 
 type TypeFilter = 'OPT' | 'STEM' | null
-type PremiumFilter = 'standard' | 'premium' | null
+type PremiumFilter = 'standard' | 'premium' | 'upgraded' | null
 
 function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -61,7 +60,16 @@ function Pill({ active, onClick, children }: { active: boolean; onClick: () => v
   )
 }
 
-export default function WhereAreYouCard({ records }: { records: TimelineRecord[] }) {
+export default function WhereAreYouCard({
+  records,
+  waitWindow,
+  asOf,
+}: {
+  records: TimelineRecord[]
+  waitWindow: number | null
+  asOf: string
+}) {
+  const today = localToday()
   const [tab, setTab] = useState<'position' | 'curve'>(() => (loadPrefs().tab as 'position' | 'curve') ?? 'position')
   const [appliedDate, setAppliedDate] = useState<string>(() => loadPrefs().appliedDate ?? '')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>(() => (loadPrefs().typeFilter as TypeFilter) ?? null)
@@ -103,46 +111,55 @@ export default function WhereAreYouCard({ records }: { records: TimelineRecord[]
   const cohort = useMemo(() => {
     let r = base2026
     if (typeFilter) r = r.filter((x) => x.normalized_type === typeFilter)
-    if (premiumFilter === 'premium') r = r.filter((x) => x.premium_processing === true)
-    if (premiumFilter === 'standard') r = r.filter((x) => x.premium_processing === false)
+    if (premiumFilter) r = r.filter((x) => processingKind(x) === premiumFilter)
     return r
   }, [base2026, typeFilter, premiumFilter])
 
-  const allCurve = useMemo(() => buildSurvivalCurve(cohort), [cohort])
-  const standardCurve = useMemo(
-    () => buildSurvivalCurve(cohort.filter((r) => r.premium_processing === false)),
-    [cohort]
-  )
-  const premiumCurve = useMemo(
-    () => buildSurvivalCurve(cohort.filter((r) => r.premium_processing === true)),
-    [cohort]
-  )
+  // Everything below describes cases approved recently, not everyone who applied:
+  // wait times are only known once someone reports their approval.
+  const recent = useMemo(() => recentApprovals(cohort, waitWindow, asOf), [cohort, waitWindow, asOf])
+  const waits = useMemo(() => sortedWaits(recent), [recent])
+  const maxDay = waitCurveMaxDay(waits)
+  const enough = waits.length >= MIN_N
+  const curve = useMemo(() => (enough ? buildWaitCurve(waits, maxDay) : []), [enough, waits, maxDay])
+  const p50 = quantileCI(waits, 0.5)
+  const p75 = quantileCI(waits, 0.75)
+  const p90 = quantileCI(waits, 0.9)
 
-  const waitDays = appliedDate ? Math.max(0, daysBetween(appliedDate, TODAY)) : null
-  const clampedDay = waitDays != null ? Math.min(Math.max(waitDays, 1), 120) : null
-
-  const p50 = useMemo(() => allCurve.find((p) => p.pctApproved >= 50), [allCurve])
-  const p75 = useMemo(() => allCurve.find((p) => p.pctApproved >= 75), [allCurve])
-  const p90 = useMemo(() => allCurve.find((p) => p.pctApproved >= 90), [allCurve])
-
-  const userPoint = clampedDay != null
-    ? allCurve.find((p) => p.day === clampedDay) ?? allCurve[allCurve.length - 1]
-    : null
-
-  const daysToP75 = p75 && waitDays != null ? Math.max(0, p75.day - waitDays) : null
-  const pastP75 = p75 && waitDays != null && waitDays >= p75.day
-
-  const mergedCurve = useMemo(
-    () => allCurve.map((pt, i) => ({
+  const byKind = useMemo(() => {
+    const out: Record<'standard' | 'premium' | 'upgraded', number[]> = { standard: [], premium: [], upgraded: [] }
+    for (const r of recent) {
+      const k = processingKind(r)
+      if (k !== 'unknown') out[k].push(r.days_to_approval as number)
+    }
+    for (const k of Object.keys(out) as (keyof typeof out)[]) out[k].sort((a, b) => a - b)
+    return out
+  }, [recent])
+  const compareCurve = useMemo(() => {
+    const curves = {
+      Standard: byKind.standard.length >= MIN_N ? buildWaitCurve(byKind.standard, maxDay) : null,
+      Premium: byKind.premium.length >= MIN_N ? buildWaitCurve(byKind.premium, maxDay) : null,
+      Upgraded: byKind.upgraded.length >= MIN_N ? buildWaitCurve(byKind.upgraded, maxDay) : null,
+    }
+    return curve.map((pt, i) => ({
       day: pt.day,
-      All: pt.pctPending,
-      Standard: standardCurve[i]?.pctPending,
-      Premium: premiumCurve[i]?.pctPending,
-    })),
-    [allCurve, standardCurve, premiumCurve]
-  )
+      All: pt.pctApproved,
+      Standard: curves.Standard?.[i].pctApproved,
+      Premium: curves.Premium?.[i].pctApproved,
+      Upgraded: curves.Upgraded?.[i].pctApproved,
+    }))
+  }, [curve, byKind, maxDay])
 
-  const approvedCount = cohort.filter((r) => typeof r.days_to_approval === 'number' && r.days_to_approval > 0).length
+  const waitDays = appliedDate ? Math.max(0, daysBetween(appliedDate, today)) : null
+  // Share of recent approvals that took no longer than the user has waited so far.
+  const pctFaster = waitDays != null && enough
+    ? Math.round((waits.filter((d) => d <= waitDays).length / waits.length) * 100)
+    : null
+  const markerDay = waitDays != null ? Math.min(Math.max(waitDays, 1), maxDay) : null
+  const markerPct = markerDay != null ? curve.find((p) => p.day === markerDay)?.pctApproved : undefined
+  const daysToP75 = p75 && waitDays != null ? p75.value - waitDays : null
+  const ticks = Array.from({ length: Math.floor(maxDay / 30) }, (_, i) => (i + 1) * 30)
+  const scope = `${waits.length} ${typeFilter ?? ''} ${premiumFilter ?? ''} cases ${windowPhrase(waitWindow)}`.replace(/\s+/g, ' ')
 
   return (
     <div
@@ -174,7 +191,7 @@ export default function WhereAreYouCard({ records }: { records: TimelineRecord[]
                 color: tab === t ? 'var(--on-ink)' : 'var(--mute)',
               }}
             >
-              {t === 'position' ? 'Your position' : 'Approval curve'}
+              {t === 'position' ? 'Your position' : 'Compare processing'}
             </button>
           ))}
         </div>
@@ -190,7 +207,7 @@ export default function WhereAreYouCard({ records }: { records: TimelineRecord[]
           <input
             type="date"
             value={appliedDate}
-            max={TODAY}
+            max={today}
             onChange={(e) => setAppliedDate(e.target.value)}
             className="text-xs px-2 py-1 rounded border outline-none"
             style={{ backgroundColor: 'var(--surface-soft)', borderColor: 'var(--hairline)', color: 'var(--ink)' }}
@@ -212,60 +229,61 @@ export default function WhereAreYouCard({ records }: { records: TimelineRecord[]
           <div className="flex gap-1">
             <Pill active={premiumFilter === 'standard'} onClick={() => setPremiumFilter(premiumFilter === 'standard' ? null : 'standard')}>Standard</Pill>
             <Pill active={premiumFilter === 'premium'} onClick={() => setPremiumFilter(premiumFilter === 'premium' ? null : 'premium')}>Premium</Pill>
+            <Pill active={premiumFilter === 'upgraded'} onClick={() => setPremiumFilter(premiumFilter === 'upgraded' ? null : 'upgraded')}>Upgraded</Pill>
           </div>
         </div>
       </div>
 
       {/* Summary strip */}
-      {waitDays != null && userPoint ? (
+      {waitDays != null && enough ? (
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-md p-3" style={{ backgroundColor: 'var(--surface-soft)' }}>
             <div className="text-lg font-bold leading-tight" style={{ color: 'var(--ink)' }}>
               Day {waitDays}
             </div>
             <div className="text-[11px] mt-0.5" style={{ color: 'var(--mute)' }}>
-              {waitDays > 120 ? 'beyond our 120-day range' : 'in the queue'}
+              since you applied
             </div>
           </div>
           <div className="rounded-md p-3" style={{ backgroundColor: 'var(--surface-soft)' }}>
             <div className="text-lg font-bold leading-tight" style={{ color: 'var(--ink)' }}>
-              {waitDays > 120 ? '>95' : userPoint.pctApproved}%
+              {pctFaster}%
             </div>
             <div className="text-[11px] mt-0.5" style={{ color: 'var(--mute)' }}>
-              of similar cases had approval by now
+              of recently approved similar cases waited this long or less
             </div>
           </div>
           <div className="rounded-md p-3" style={{ backgroundColor: 'var(--surface-soft)' }}>
-            {pastP75 ? (
+            {p75 && daysToP75 != null && daysToP75 <= 0 ? (
               <>
-                <div className="text-lg font-bold leading-tight" style={{ color: '#f7a501' }}>Past 75th%</div>
-                <div className="text-[11px] mt-0.5" style={{ color: 'var(--mute)' }}>most similar cases are done</div>
+                <div className="text-lg font-bold leading-tight" style={{ color: '#f7a501' }}>Past {p75.value}d</div>
+                <div className="text-[11px] mt-0.5" style={{ color: 'var(--mute)' }}>longer than 3 in 4 recent approvals waited</div>
               </>
             ) : (
               <>
                 <div className="text-lg font-bold leading-tight" style={{ color: 'var(--ink)' }}>
-                  {daysToP75 != null ? `~${daysToP75}d` : '—'}
+                  {p75 && daysToP75 != null ? `~${daysToP75}d` : '—'}
                 </div>
-                <div className="text-[11px] mt-0.5" style={{ color: 'var(--mute)' }}>until 75% of similar cases are done</div>
+                <div className="text-[11px] mt-0.5" style={{ color: 'var(--mute)' }}>
+                  {p75 ? `until ${p75.value}d, the wait 3 in 4 recent approvals stayed under` : 'too few cases for a 75th percentile'}
+                </div>
               </>
             )}
           </div>
         </div>
       ) : (
         <p className="text-[13px]" style={{ color: 'var(--mute)' }}>
-          Enter your applied date above, then narrow by type and processing to match your situation.
+          {enough
+            ? 'Enter your applied date above, then narrow by type and processing to match your situation.'
+            : `Only ${scope} — at least ${MIN_N} are needed. Try a longer window or fewer filters.`}
         </p>
       )}
 
       {/* Chart */}
-      {allCurve.length === 0 ? (
-        <p className="text-[13px] text-center py-8" style={{ color: 'var(--mute)' }}>
-          No records match the selected combination.
-        </p>
-      ) : tab === 'position' ? (
+      {!enough ? null : tab === 'position' ? (
         <>
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={allCurve} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+            <AreaChart data={curve} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="goldGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#f7a501" stopOpacity={0.3} />
@@ -274,7 +292,7 @@ export default function WhereAreYouCard({ records }: { records: TimelineRecord[]
               </defs>
               <XAxis
                 dataKey="day"
-                ticks={[15, 30, 45, 60, 75, 90, 105, 120]}
+                ticks={ticks}
                 tick={{ fontSize: 11, fill: 'var(--mute)' }}
                 axisLine={false}
                 tickLine={false}
@@ -291,31 +309,31 @@ export default function WhereAreYouCard({ records }: { records: TimelineRecord[]
               />
               <Tooltip
                 contentStyle={TOOLTIP_STYLE}
-                formatter={(val) => [`${val}%`, 'Approved by this day']}
+                formatter={(val) => [`${val}%`, 'Approved within this many days']}
                 labelFormatter={(v) => `Day ${v}`}
               />
               <Area type="monotone" dataKey="pctApproved" stroke="#f7a501" strokeWidth={2} fill="url(#goldGrad)" dot={false} />
-              {p50 && <ReferenceLine x={p50.day} stroke="var(--hairline)" strokeDasharray="3 3" label={{ value: `${p50.day}d`, position: 'insideTopLeft', fontSize: 9, fill: '#9b9c92', offset: 3 }} />}
-              {p75 && <ReferenceLine x={p75.day} stroke="var(--hairline)" strokeDasharray="3 3" label={{ value: `${p75.day}d`, position: 'insideTopLeft', fontSize: 9, fill: '#9b9c92', offset: 3 }} />}
-              {p90 && <ReferenceLine x={p90.day} stroke="var(--hairline)" strokeDasharray="3 3" label={{ value: `${p90.day}d`, position: 'insideTopLeft', fontSize: 9, fill: '#9b9c92', offset: 3 }} />}
-              {clampedDay != null && <ReferenceLine x={clampedDay} stroke="var(--ink)" strokeWidth={2} />}
-              {clampedDay != null && userPoint && (
-                <ReferenceDot x={clampedDay} y={userPoint.pctApproved} r={5} fill="var(--ink)" stroke="white" strokeWidth={2} />
+              {[p50, p75, p90].map((q) => q && (
+                <ReferenceLine key={q.value} x={q.value} stroke="var(--hairline)" strokeDasharray="3 3" label={{ value: `${q.value}d`, position: 'insideTopLeft', fontSize: 9, fill: '#9b9c92', offset: 3 }} />
+              ))}
+              {markerDay != null && <ReferenceLine x={markerDay} stroke="var(--ink)" strokeWidth={2} />}
+              {markerDay != null && markerPct != null && (
+                <ReferenceDot x={markerDay} y={markerPct} r={5} fill="var(--ink)" stroke="white" strokeWidth={2} />
               )}
             </AreaChart>
           </ResponsiveContainer>
           <p className="text-[11px]" style={{ color: 'var(--mute)' }}>
-            Dashed lines mark when 50%, 75%, and 90% of cases had their approval. Based on {approvedCount} records with a known wait time from 2026 threads.
+            Share of {scope} (2026 threads) that were approved within each number of days. Dashed lines mark the 50th, 75th and 90th percentiles where there are enough cases. Pending cases aren&apos;t included: their wait isn&apos;t known yet.
           </p>
         </>
       ) : (
         <>
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={mergedCurve} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+            <LineChart data={compareCurve} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline-soft)" vertical={false} />
               <XAxis
                 dataKey="day"
-                ticks={[15, 30, 45, 60, 75, 90, 105, 120]}
+                ticks={ticks}
                 tick={{ fontSize: 11, fill: 'var(--mute)' }}
                 axisLine={false}
                 tickLine={false}
@@ -332,18 +350,19 @@ export default function WhereAreYouCard({ records }: { records: TimelineRecord[]
               />
               <Tooltip
                 contentStyle={TOOLTIP_STYLE}
-                formatter={(val) => [`${val}%`, 'Still waiting']}
-                labelFormatter={(v) => `Day ${v}`}
+                formatter={(val) => `${val}%`}
+                labelFormatter={(v) => `Approved within ${v} days`}
               />
               <Legend wrapperStyle={{ fontSize: '12px', color: 'var(--mute)', paddingTop: '8px' }} />
               <Line type="monotone" dataKey="All" stroke="var(--ink)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} />
-              <Line type="monotone" dataKey="Standard" stroke="#9b9c92" strokeWidth={1.5} strokeDasharray="4 2" dot={false} activeDot={{ r: 3 }} />
-              <Line type="monotone" dataKey="Premium" stroke="#f7a501" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
-              {clampedDay != null && <ReferenceLine x={clampedDay} stroke="var(--ink)" strokeWidth={1.5} strokeDasharray="3 3" opacity={0.5} />}
+              {byKind.standard.length >= MIN_N && <Line type="monotone" dataKey="Standard" stroke="#9b9c92" strokeWidth={1.5} strokeDasharray="4 2" dot={false} activeDot={{ r: 3 }} />}
+              {byKind.premium.length >= MIN_N && <Line type="monotone" dataKey="Premium" stroke="#f7a501" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />}
+              {byKind.upgraded.length >= MIN_N && <Line type="monotone" dataKey="Upgraded" stroke="#5b9bd5" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />}
+              {markerDay != null && <ReferenceLine x={markerDay} stroke="var(--ink)" strokeWidth={1.5} strokeDasharray="3 3" opacity={0.5} />}
             </LineChart>
           </ResponsiveContainer>
           <p className="text-[11px]" style={{ color: 'var(--mute)' }}>
-            % of cases still waiting at each day. Based on 2026 thread data only.
+            Share of cases {windowPhrase(waitWindow)} approved within each number of days, by processing. Premium means premium from the start; upgraded cases are counted from their original filing date. Groups with fewer than {MIN_N} cases are hidden.
           </p>
         </>
       )}

@@ -3,12 +3,11 @@
 import { useState } from 'react'
 import { useMounted } from '@/lib/use-mounted'
 import { Check, ChevronLeft, Pencil } from 'lucide-react'
-import { formatShortDate, daysBetween } from '@/lib/utils'
+import { formatShortDate, daysBetween, localToday } from '@/lib/utils'
 import confetti from 'canvas-confetti'
 
 export const JOURNEY_KEY = 'my-journey'
 const WAY_PREFS_KEY = 'way-prefs'
-const TODAY = new Date().toISOString().slice(0, 10)
 
 export interface JourneyData {
   type: 'OPT' | 'STEM' | null
@@ -294,7 +293,7 @@ function Wizard({
           <input
             type="date"
             value={dateInput}
-            max={TODAY}
+            max={localToday()}
             onChange={(e) => setDateInput(e.target.value)}
             className="text-sm px-3 py-2 rounded border outline-none w-full max-w-[200px]"
             style={{
@@ -387,7 +386,7 @@ function UserJourneyCard() {
   const totalDays = isComplete && journey?.date_applied && journey?.date_card_received
     ? daysBetween(journey.date_applied, journey.date_card_received)
     : journey?.date_applied
-    ? daysBetween(journey.date_applied, TODAY)
+    ? daysBetween(journey.date_applied, localToday())
     : null
 
   let startMs = 0

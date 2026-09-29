@@ -13,6 +13,9 @@ import {
   Legend,
 } from 'recharts'
 import { formatYearMonth } from '@/lib/utils'
+import type { WaitTrendPoint } from '@/lib/types'
+import { MIN_N } from '@/lib/data'
+import { windowPhrase } from '@/components/wait-window-picker'
 
 const OPT_COLOR = '#5b9bd5'
 const STEM_COLOR = '#f7a501'
@@ -42,12 +45,12 @@ interface HistogramDatum {
   STEM: number
 }
 
-export function ProcessingTimeChart({ data }: { data: HistogramDatum[] }) {
+export function ProcessingTimeChart({ data, waitWindow, n }: { data: HistogramDatum[]; waitWindow: number | null; n: number }) {
   const hasOPT = data.some((d) => d.OPT > 0)
   const hasSTEM = data.some((d) => d.STEM > 0)
 
   return (
-    <ChartCard title="Processing Time Distribution" sub="Days to Approval">
+    <ChartCard title="Processing Time Distribution" sub={`Days to approval · ${n} cases ${windowPhrase(waitWindow)}`}>
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={data} barCategoryGap="20%" barGap={2}>
           <XAxis
@@ -149,6 +152,55 @@ export function MonthlyTrendChart({ data }: { data: TrendDatum[] }) {
           )}
         </LineChart>
       </ResponsiveContainer>
+    </ChartCard>
+  )
+}
+
+export function WaitTrendChart({ data }: { data: WaitTrendPoint[] }) {
+  const rows = data.map((d) => ({
+    month: formatYearMonth(d.ym),
+    n: d.n,
+    Median: d.median?.value ?? null,
+    '75th percentile': d.p75?.value ?? null,
+  }))
+  if (!rows.some((r) => r.Median !== null)) return null
+
+  return (
+    <ChartCard title="Is it getting faster?" sub="Wait of cases approved each month">
+      <ResponsiveContainer width="100%" height={220}>
+        <LineChart data={rows}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline-soft)" vertical={false} />
+          <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--mute)' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+          <YAxis
+            tick={{ fontSize: 11, fill: 'var(--mute)' }}
+            axisLine={false}
+            tickLine={false}
+            width={36}
+            domain={[0, 'auto']}
+            tickFormatter={(v) => `${v}d`}
+          />
+          <Tooltip
+            contentStyle={{
+              backgroundColor: 'var(--surface-card)',
+              border: '1px solid var(--hairline)',
+              borderRadius: '6px',
+              fontSize: '13px',
+              color: 'var(--ink)',
+            }}
+            formatter={(val) => (val == null ? '—' : `${val}d`)}
+            labelFormatter={(label, payload) => {
+              const n = payload?.[0]?.payload?.n
+              return n != null ? `${label} · ${n} approvals` : label
+            }}
+          />
+          <Legend wrapperStyle={{ fontSize: '12px', color: 'var(--mute)', paddingTop: '8px' }} />
+          <Line type="monotone" dataKey="Median" stroke="var(--ink)" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} connectNulls={false} />
+          <Line type="monotone" dataKey="75th percentile" stroke={STEM_COLOR} strokeWidth={1.5} strokeDasharray="4 2" dot={false} activeDot={{ r: 3 }} connectNulls={false} />
+        </LineChart>
+      </ResponsiveContainer>
+      <p className="text-[11px]" style={{ color: 'var(--mute)' }}>
+        Days from applying to approval, grouped by the month of approval. Months with fewer than {MIN_N} approvals are left out.
+      </p>
     </ChartCard>
   )
 }

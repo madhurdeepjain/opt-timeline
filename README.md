@@ -10,7 +10,7 @@ How long is OPT / STEM OPT taking right now? USCIS publishes a single slow-movin
 
 ```
 Reddit megathreads ──▶ scraper (Python) ──▶ Postgres ──▶ dashboard (Next.js)
-                        parse + dedupe       daily cron     filters + charts, all client-side
+                        parse + merge        daily cron     filters + charts, all client-side
 ```
 
 People post something like this in the threads:
@@ -25,12 +25,20 @@ People post something like this in the threads:
 • Date Card Received: MM/DD/YYYY
 ```
 
-Almost nobody follows the template exactly. [`parser.py`](scraper/src/reddit_opt_scraper/parser.py) is a pile of regexes that pulls out the fields anyway. It handles mixed date formats, DD/MM vs MM/DD ambiguity, leftover `MM/DD/YYYY` placeholders, "N/A" / "pending" / "TBD", invisible copy-paste characters and comments that people edit weeks later to add their approval date. Records are deduped by author and applied date, and days-to-approval is computed from the parsed dates.
+Almost nobody follows the template exactly. [`parser.py`](scraper/src/reddit_opt_scraper/parser.py) is a pile of regexes that pulls out the fields anyway. It handles a dozen date formats, dates without a year ("May 31", "7/9"), DD/MM vs MM/DD, mistyped years, values that Reddit's editor pushes onto the next line, leftover `MM/DD/YYYY` placeholders and "N/A" / "pending" / "TBD". A date must be on or before the last time the author edited their comment, which settles most of the ambiguity.
+
+People also post the same application more than once (status updates, reposts in both threads). Each author's posts are merged into one record per application unless they contradict each other (different type, or dates more than a week apart).
+
+## How the numbers work
+
+A wait time is only known once someone reports their approval, so every wait statistic describes **cases approved in a recent window** (60 days by default; you can change it). This is also how USCIS reports its own processing times. Pending cases can't simply be added in: people tend to come back and post when they're approved and go quiet while they wait, so a silent "pending" post isn't evidence of still waiting.
+
+Medians come with a 95% confidence interval and the number of cases behind them. Anything computed from fewer than 20 cases, or with fewer than 5 cases beyond a percentile, isn't shown. "Premium" means premium processing from the start; cases upgraded later are counted separately, from their original filing date.
 
 ## Layout
 
 ```
-scraper/     Python (uv). fetch → parse → merge → dedupe → save
+scraper/     Python (uv). fetch → parse → merge each author's posts → save
   parser.py    the interesting part: free-form comment → structured record
   fetcher.py   pulls top-level comments from each thread
   config.py    which threads to scrape
@@ -40,7 +48,7 @@ supabase/    table schema
 
 ## Contributing
 
-The parser is where help is most useful. If a comment was parsed wrong, or a real timeline didn't show up at all, open an issue with a link to the comment. Also useful: a PR that adds the failing comment body next to the regex that should have caught it.
+The parser is where help is most useful. If a comment was parsed wrong, or a real timeline didn't show up at all, open an issue with a link to the comment. Even better, a PR that adds the comment as a case in [`scraper/tests/test_parser.py`](scraper/tests/test_parser.py) along with the fix (`uv run python -m unittest discover -s tests` from `scraper/`).
 
 Know of a new megathread? Open an issue with the link.
 

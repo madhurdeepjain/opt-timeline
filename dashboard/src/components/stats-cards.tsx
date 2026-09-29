@@ -1,4 +1,6 @@
-import type { DashboardStats } from '@/lib/types'
+import type { DashboardStats, QuantileEstimate } from '@/lib/types'
+import { MIN_N } from '@/lib/data'
+import { windowPhrase } from '@/components/wait-window-picker'
 import { formatDate } from '@/lib/utils'
 import { Clock, Users, Zap, CalendarDays } from 'lucide-react'
 
@@ -36,13 +38,20 @@ function Card({
   )
 }
 
-export default function StatsCards({ stats }: { stats: DashboardStats }) {
-  const medianParts: string[] = []
-  if (stats.medianDaysPremium !== null) medianParts.push(`${stats.medianDaysPremium}d premium`)
-  if (stats.medianDaysStandard !== null) medianParts.push(`${stats.medianDaysStandard}d standard`)
-  const medianSub = medianParts.length > 0
-    ? medianParts.join(' · ')
-    : 'days from applied to approved'
+function fmtEstimate(e: QuantileEstimate | null): string {
+  return e ? `${e.value}d` : '—'
+}
+
+export default function StatsCards({ stats, waitWindow }: { stats: DashboardStats; waitWindow: number | null }) {
+  const byKind = [
+    stats.medianWaitStandard && `${stats.medianWaitStandard.value}d standard`,
+    stats.medianWaitPremium && `${stats.medianWaitPremium.value}d premium`,
+    stats.medianWaitUpgraded && `${stats.medianWaitUpgraded.value}d upgraded`,
+  ].filter(Boolean)
+  const m = stats.medianWait
+  const medianSub = m
+    ? `95% CI ${m.lo}–${m.hi}d · ${m.n} cases ${windowPhrase(waitWindow)}` + (byKind.length ? ` · ${byKind.join(' · ')}` : '')
+    : `Not enough cases ${windowPhrase(waitWindow)} (${stats.recentCount} of ${MIN_N} needed)`
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -54,15 +63,15 @@ export default function StatsCards({ stats }: { stats: DashboardStats }) {
       />
       <Card
         icon={<Clock size={14} />}
-        label="Median Approval"
-        value={stats.medianDaysToApproval !== null ? `${stats.medianDaysToApproval}d` : '—'}
+        label="Median Wait"
+        value={fmtEstimate(m)}
         sub={medianSub}
       />
       <Card
         icon={<Zap size={14} />}
         label="Premium Processing"
         value={`${stats.premiumPct}%`}
-        sub="of records with known processing type"
+        sub="of records with known processing type, incl. upgrades"
       />
       <Card
         icon={<CalendarDays size={14} />}

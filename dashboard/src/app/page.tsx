@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import type { TimelineRecord, FilterState } from '@/lib/types'
-import { CITIZENSHIP_UNSPECIFIED, SERVICE_CENTER_UNSPECIFIED, DEFAULT_FILTERS } from '@/lib/types'
-import { applyFilters, computeStats, buildHistogramData, buildMonthlyTrendData } from '@/lib/data'
+import { CITIZENSHIP_UNSPECIFIED, SERVICE_CENTER_UNSPECIFIED, DEFAULT_FILTERS, DEFAULT_WAIT_WINDOW } from '@/lib/types'
+import { applyFilters, computeStats, buildHistogramData, buildMonthlyTrendData, buildWaitTrend, recentApprovals, sortedWaits, waitCurveMaxDay } from '@/lib/data'
+import { addDays, localToday } from '@/lib/utils'
 import { fetchAllTimeline, fetchMeta } from '@/lib/supabase'
 
 import Nav from '@/components/nav'
@@ -11,7 +12,8 @@ import UserJourney from '@/components/user-journey'
 import PersonalTimeline from '@/components/personal-timeline'
 import Filters from '@/components/filters'
 import StatsCards from '@/components/stats-cards'
-import { ProcessingTimeChart, MonthlyTrendChart } from '@/components/charts'
+import { ProcessingTimeChart, MonthlyTrendChart, WaitTrendChart } from '@/components/charts'
+import WaitWindowPicker from '@/components/wait-window-picker'
 import DataTable from '@/components/data-table'
 import Footer from '@/components/footer'
 import WhereAreYouCard from '@/components/where-are-you'
@@ -71,12 +73,15 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(null)
+  // Date the data was scraped: wait-time windows end here, not at the viewer's today.
+  const [asOf, setAsOf] = useState<string>(localToday)
+  const [waitWindow, setWaitWindow] = useState<number | null>(DEFAULT_WAIT_WINDOW)
   const [filters, setFilters] = useState<FilterState>(() => {
     if (typeof window === 'undefined') return DEFAULT_FILTERS
     try {
       const prefs = JSON.parse(localStorage.getItem('way-prefs') ?? '{}')
       const type: FilterState['type'] = prefs.typeFilter === 'OPT' ? 'OPT' : prefs.typeFilter === 'STEM' ? 'STEM' : 'all'
-      const premium: FilterState['premium'] = prefs.premiumFilter === 'premium' ? 'premium' : prefs.premiumFilter === 'standard' ? 'standard' : 'all'
+      const premium: FilterState['premium'] = prefs.premiumFilter === 'premium' || prefs.premiumFilter === 'standard' || prefs.premiumFilter === 'upgraded' ? prefs.premiumFilter : 'all'
       return { ...DEFAULT_FILTERS, type, premium }
     } catch { return DEFAULT_FILTERS }
   })
@@ -87,7 +92,7 @@ export default function Home() {
       setFilters(prev => ({
         ...prev,
         type: typeFilter === 'OPT' ? 'OPT' : typeFilter === 'STEM' ? 'STEM' : 'all',
-        premium: premiumFilter === 'premium' ? 'premium' : premiumFilter === 'standard' ? 'standard' : 'all',
+        premium: premiumFilter === 'premium' || premiumFilter === 'standard' || premiumFilter === 'upgraded' ? premiumFilter : 'all',
       }))
     }
     window.addEventListener('opt-filters-sync', handleSync)
@@ -107,6 +112,7 @@ export default function Home() {
       .then(({ scraped_at }) => {
         if (scraped_at) {
           const d = new Date(scraped_at)
+          setAsOf(scraped_at.slice(0, 10))
           const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
           const tzAbbr = d.toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop() ?? tz
           setFetchedAt(
@@ -157,7 +163,7 @@ export default function Home() {
     return {
       type: { OPT: opt, STEM: stem, unknown: typeUnk },
       premium: { standard: std, premium: prem, upgraded, any_premium: anyPremium, unknown: premUnk },
-      approved: { yes: approvedYes, no: baseApproved.length - approvedYes, unknown: 0 },
+      approved: { yes: approvedYes, no: baseApproved.length - approvedYes },
     }
   }, [records, filters])
 
@@ -262,9 +268,12 @@ export default function Home() {
   }, [records, filters])
 
   const filtered = useMemo(() => applyFilters(records, filters), [records, filters])
-  const stats = useMemo(() => computeStats(filtered), [filtered])
-  const histogramData = useMemo(() => buildHistogramData(filtered), [filtered])
+  const recent = useMemo(() => recentApprovals(filtered, waitWindow, asOf), [filtered, waitWindow, asOf])
+  const since = waitWindow === null ? null : addDays(asOf, -waitWindow)
+  const stats = useMemo(() => computeStats(filtered, recent), [filtered, recent])
+  const histogramData = useMemo(() => buildHistogramData(recent, waitCurveMaxDay(sortedWaits(recent))), [recent])
   const trendData = useMemo(() => buildMonthlyTrendData(filtered), [filtered])
+  const waitTrend = useMemo(() => buildWaitTrend(filtered), [filtered])
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--canvas)' }}>
@@ -300,7 +309,7 @@ export default function Home() {
               Could not load timeline data
             </p>
             <p className="text-sm mt-1" style={{ color: 'var(--body)' }}>
-              Make sure <code className="px-1 py-0.5 rounded text-xs" style={{ backgroundColor: 'var(--surface-soft)' }}>dashboard/data/timeline.csv</code> exists. Copy it from <code className="px-1 py-0.5 rounded text-xs" style={{ backgroundColor: 'var(--surface-soft)' }}>scraper/out/timeline.csv</code>.
+              {error}. Try reloading the page.
             </p>
           </div>
         )}
@@ -314,7 +323,7 @@ export default function Home() {
 
             {/* Where Are You — uses own 2026-thread scope, unaffected by global filters */}
             <section>
-              <WhereAreYouCard records={records} />
+              <WhereAreYouCard records={records} waitWindow={waitWindow} asOf={asOf} />
             </section>
 
             {/* Filters */}
@@ -323,13 +332,17 @@ export default function Home() {
             </section>
 
             {/* Stats */}
-            <section>
-              <StatsCards stats={stats} />
+            <section className="space-y-4">
+              <WaitWindowPicker value={waitWindow} onChange={setWaitWindow} />
+              <StatsCards stats={stats} waitWindow={waitWindow} />
             </section>
 
             {/* Charts */}
+            <section>
+              <WaitTrendChart data={waitTrend} />
+            </section>
             <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <ProcessingTimeChart data={histogramData} />
+              <ProcessingTimeChart data={histogramData} waitWindow={waitWindow} n={recent.length} />
               <MonthlyTrendChart data={trendData} />
             </section>
 
@@ -340,12 +353,12 @@ export default function Home() {
 
             {/* Milestone Breakdown */}
             <section>
-              <MilestoneBreakdown records={filtered} />
+              <MilestoneBreakdown records={filtered} since={since} waitWindow={waitWindow} />
             </section>
 
             {/* Country Breakdown */}
             <section>
-              <CountryBreakdown records={filtered} />
+              <CountryBreakdown recent={recent} waitWindow={waitWindow} />
             </section>
 
             {/* Data Table */}

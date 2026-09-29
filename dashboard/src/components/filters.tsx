@@ -46,7 +46,7 @@ interface CardStatusCounts {
 interface PillCounts {
   type: { OPT: number; STEM: number; unknown: number }
   premium: { standard: number; premium: number; upgraded: number; any_premium: number; unknown: number }
-  approved: { yes: number; no: number; unknown: number }
+  approved: { yes: number; no: number }
 }
 
 interface ServiceCenterOptions {
@@ -1309,7 +1309,6 @@ export default function Filters({ filters, onChange, onClear, total, citizenship
         options={[
           { key: 'yes', label: 'Approved', count: pillCounts.approved.yes },
           { key: 'no', label: 'Pending', count: pillCounts.approved.no },
-          { key: 'unknown', label: 'Unknown', count: pillCounts.approved.unknown },
         ]}
         onChange={(approved) => onChange({ ...filters, approved })}
       />
@@ -1325,9 +1324,6 @@ export default function Filters({ filters, onChange, onClear, total, citizenship
         </PillTab>
         <PillTab active={filters.approved === 'no'} onClick={() => onChange({ ...filters, approved: 'no' })} count={pillCounts.approved.no}>
           Pending
-        </PillTab>
-        <PillTab active={filters.approved === 'unknown'} onClick={() => onChange({ ...filters, approved: 'unknown' })} count={pillCounts.approved.unknown}>
-          Unknown
         </PillTab>
       </div>
 

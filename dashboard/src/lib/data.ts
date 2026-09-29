@@ -1,6 +1,62 @@
-import type { TimelineRecord, FilterState, DashboardStats, SurvivalPoint, FunnelStage, MilestonePoint, CountryBreakdown } from './types'
+import type { TimelineRecord, FilterState, DashboardStats, WaitCurvePoint, FunnelStage, MilestonePoint, CountryBreakdown, QuantileEstimate, WaitTrendPoint } from './types'
 import { CITIZENSHIP_UNSPECIFIED, SERVICE_CENTER_UNSPECIFIED } from './types'
-import { median, toYearMonth, daysBetween } from './utils'
+import { toYearMonth, daysBetween, addDays } from './utils'
+
+// ── Wait-time statistics ──────────────────────────────────────────────────────
+// Wait times are only observed for cases that report an approval, so every
+// wait statistic here describes *completed* cases, and by default only those
+// approved recently (the same convention USCIS uses for its processing times).
+// Pending cases can't simply be added in: people tend to come back and post
+// when they're approved, so silence after a "pending" post isn't evidence of
+// still waiting, and survival-style corrections end up biased too.
+
+/** Smallest sample a quantile is shown for. */
+export const MIN_N = 20
+/** A quantile also needs this many observations on each side (p90 → n ≥ 50). */
+const MIN_TAIL = 5
+/** compute_derived in the scraper already drops waits outside 0–730 days. */
+const MAX_WAIT_DAYS = 730
+
+function isWait(d: number | null): d is number {
+  return typeof d === 'number' && d >= 0 && d <= MAX_WAIT_DAYS
+}
+
+/**
+ * Quantile q of an ascending-sorted sample (smallest value covering ≥ q of it,
+ * so it matches the wait curve), with a distribution-free 95% confidence
+ * interval from order statistics. Null when the sample is too small to say.
+ */
+export function quantileCI(sorted: number[], q: number): QuantileEstimate | null {
+  const n = sorted.length
+  if (n < MIN_N || n * Math.min(q, 1 - q) < MIN_TAIL - 1e-9) return null
+  const h = 1.96 * Math.sqrt(n * q * (1 - q))
+  const lo = Math.max(1, Math.floor(n * q - h))
+  const hi = Math.min(n, Math.ceil(n * q + h))
+  return { value: sorted[Math.ceil(n * q - 1e-9) - 1], lo: sorted[lo - 1], hi: sorted[hi - 1], n }
+}
+
+/**
+ * Cases with a usable wait time, approved within `windowDays` of `asOf`
+ * (the scrape date). `windowDays = null` keeps every approval.
+ */
+export function recentApprovals(records: TimelineRecord[], windowDays: number | null, asOf: string): TimelineRecord[] {
+  const since = windowDays === null ? null : addDays(asOf, -windowDays)
+  return records.filter(
+    (r) => isWait(r.days_to_approval) && !!r.date_approved && (since === null || r.date_approved > since),
+  )
+}
+
+export function sortedWaits(records: TimelineRecord[]): number[] {
+  return records.map((r) => r.days_to_approval).filter(isWait).sort((a, b) => a - b)
+}
+
+/** Premium from the start vs upgraded later vs standard: three different clocks. */
+export function processingKind(r: TimelineRecord): 'premium' | 'upgraded' | 'standard' | 'unknown' {
+  if (r.pp_upgraded === true) return 'upgraded'
+  if (r.premium_processing === true) return 'premium'
+  if (r.premium_processing === false) return 'standard'
+  return 'unknown'
+}
 
 function postIdFromPermalink(permalink: string): string {
   return permalink.split('/comments/')[1]?.split('/')[0] ?? ''
@@ -18,7 +74,6 @@ export function applyFilters(records: TimelineRecord[], filters: FilterState): T
     if (filters.premium === 'unknown' && r.premium_processing !== null) return false
     if (filters.approved === 'yes' && !r.date_approved) return false
     if (filters.approved === 'no' && !!r.date_approved) return false
-    if (filters.approved === 'unknown') return false
     if (filters.cardStatus.length > 0) {
       const stage: 'none' | 'produced' | 'received' = r.date_card_received
         ? 'received'
@@ -51,27 +106,11 @@ export function applyFilters(records: TimelineRecord[], filters: FilterState): T
   })
 }
 
-export function computeStats(records: TimelineRecord[]): DashboardStats {
-  const optCount = records.filter((r) => r.normalized_type === 'OPT').length
-  const stemCount = records.filter((r) => r.normalized_type === 'STEM').length
-  const approvedCount = records.filter((r) => r.date_approved).length
-
-  const approvalDays = records
-    .map((r) => r.days_to_approval)
-    .filter((d): d is number => typeof d === 'number' && d > 0 && d < 730)
-
-  const standardDays = records
-    .filter((r) => r.premium_processing === false)
-    .map((r) => r.days_to_approval)
-    .filter((d): d is number => typeof d === 'number' && d > 0 && d < 730)
-
-  const premiumDays = records
-    .filter((r) => r.premium_processing === true)
-    .map((r) => r.days_to_approval)
-    .filter((d): d is number => typeof d === 'number' && d > 0 && d < 730)
-
-  const premiumCount = records.filter((r) => r.premium_processing === true).length
-  const knownPremiumTotal = records.filter((r) => r.premium_processing !== null).length
+export function computeStats(records: TimelineRecord[], recent: TimelineRecord[]): DashboardStats {
+  const knownKind = records.filter((r) => processingKind(r) !== 'unknown')
+  const anyPremium = knownKind.filter((r) => r.premium_processing === true).length
+  const waitsOf = (kind: ReturnType<typeof processingKind>) =>
+    quantileCI(sortedWaits(recent.filter((r) => processingKind(r) === kind)), 0.5)
 
   const appliedDates = records
     .map((r) => r.date_applied)
@@ -80,62 +119,73 @@ export function computeStats(records: TimelineRecord[]): DashboardStats {
 
   return {
     total: records.length,
-    optCount,
-    stemCount,
-    approvedCount,
-    medianDaysToApproval: median(approvalDays),
-    medianDaysStandard: median(standardDays),
-    medianDaysPremium: median(premiumDays),
-    premiumPct: knownPremiumTotal > 0 ? Math.round((premiumCount / knownPremiumTotal) * 100) : 0,
+    optCount: records.filter((r) => r.normalized_type === 'OPT').length,
+    stemCount: records.filter((r) => r.normalized_type === 'STEM').length,
+    recentCount: recent.length,
+    medianWait: quantileCI(sortedWaits(recent), 0.5),
+    medianWaitStandard: waitsOf('standard'),
+    medianWaitPremium: waitsOf('premium'),
+    medianWaitUpgraded: waitsOf('upgraded'),
+    premiumPct: knownKind.length > 0 ? Math.round((anyPremium / knownKind.length) * 100) : 0,
     latestAppliedDate: appliedDates.length > 0 ? appliedDates[appliedDates.length - 1] : null,
   }
 }
 
-export function buildHistogramData(records: TimelineRecord[]) {
-  const bins = [
-    { label: '0–15', min: 0, max: 15 },
-    { label: '15–30', min: 15, max: 30 },
-    { label: '30–45', min: 30, max: 45 },
-    { label: '45–60', min: 45, max: 60 },
-    { label: '60–75', min: 60, max: 75 },
-    { label: '75–90', min: 75, max: 90 },
-    { label: '90+', min: 90, max: Infinity },
-  ]
+/** OPT/STEM counts in 30-day wait bins up to `maxDay`, with a final open bin. */
+export function buildHistogramData(records: TimelineRecord[], maxDay: number) {
+  const bins: { label: string; min: number; max: number }[] = []
+  for (let lo = 0; lo < maxDay; lo += 30) bins.push({ label: `${lo}–${lo + 30}`, min: lo, max: lo + 30 })
+  bins.push({ label: `${maxDay}+`, min: maxDay, max: Infinity })
 
   return bins.map(({ label, min, max }) => {
-    const opt = records.filter(
-      (r) =>
-        r.normalized_type === 'OPT' &&
-        typeof r.days_to_approval === 'number' &&
-        r.days_to_approval >= min &&
-        r.days_to_approval < max
-    ).length
-    const stem = records.filter(
-      (r) =>
-        r.normalized_type === 'STEM' &&
-        typeof r.days_to_approval === 'number' &&
-        r.days_to_approval >= min &&
-        r.days_to_approval < max
-    ).length
-    return { label, OPT: opt, STEM: stem }
+    const inBin = (type: string) =>
+      records.filter(
+        (r) => r.normalized_type === type && isWait(r.days_to_approval) && r.days_to_approval >= min && r.days_to_approval < max,
+      ).length
+    return { label, OPT: inBin('OPT'), STEM: inBin('STEM') }
   })
 }
 
-export function buildSurvivalCurve(records: TimelineRecord[]): SurvivalPoint[] {
-  const days = records
-    .map((r) => r.days_to_approval)
-    .filter((d): d is number => typeof d === 'number' && d > 0 && d < 400)
-    .sort((a, b) => a - b)
-  if (days.length === 0) return []
-  const total = days.length
-  const result: SurvivalPoint[] = []
-  let approved = 0
-  let di = 0
-  for (let day = 1; day <= 120; day++) {
-    while (di < total && days[di] <= day) { approved++; di++ }
-    result.push({ day, pctApproved: Math.round(approved / total * 100), pctPending: Math.round((total - approved) / total * 100) })
+/**
+ * Share of cases (already filtered to recent approvals) approved within each
+ * day, from day 1 to `maxDay`.
+ */
+export function buildWaitCurve(sorted: number[], maxDay: number): WaitCurvePoint[] {
+  if (sorted.length === 0) return []
+  const out: WaitCurvePoint[] = []
+  let i = 0
+  for (let day = 1; day <= maxDay; day++) {
+    while (i < sorted.length && sorted[i] <= day) i++
+    out.push({ day, pctApproved: Math.round((i / sorted.length) * 100) })
   }
-  return result
+  return out
+}
+
+/** Chart range for a wait curve: covers p95, rounded up to 30 days, at least 120. */
+export function waitCurveMaxDay(sorted: number[]): number {
+  if (sorted.length === 0) return 120
+  const p95 = sorted[Math.ceil(sorted.length * 0.95) - 1]
+  return Math.min(MAX_WAIT_DAYS, Math.max(120, Math.ceil(p95 / 30) * 30))
+}
+
+/** Median wait of the cases approved in each calendar month. */
+export function buildWaitTrend(records: TimelineRecord[]): WaitTrendPoint[] {
+  const byMonth: Record<string, number[]> = {}
+  for (const r of records) {
+    if (!r.date_approved || !isWait(r.days_to_approval)) continue
+    ;(byMonth[toYearMonth(r.date_approved)] ??= []).push(r.days_to_approval)
+  }
+  return Object.entries(byMonth)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([ym, days]) => {
+      const sorted = days.sort((a, b) => a - b)
+      return {
+        ym,
+        n: sorted.length,
+        median: quantileCI(sorted, 0.5),
+        p75: quantileCI(sorted, 0.75),
+      }
+    })
 }
 
 export function buildFunnelData(records: TimelineRecord[]): FunnelStage[] {
@@ -154,62 +204,55 @@ export function buildFunnelData(records: TimelineRecord[]): FunnelStage[] {
   ]
 }
 
-export function buildMilestoneData(records: TimelineRecord[]): MilestonePoint[] {
-  function stageStats(diffs: number[]): { median: number | null; p25: number | null; p75: number | null; range: [number, number] | null; n: number } {
-    const valid = diffs.filter((d) => d > 0 && d < 365).sort((a, b) => a - b)
-    if (valid.length === 0) return { median: null, p25: null, p75: null, range: null, n: 0 }
-    const med = median(valid) ?? 0
-    const p25 = valid[Math.floor(valid.length * 0.25)] ?? med
-    const p75 = valid[Math.floor(valid.length * 0.75)] ?? med
-    return { median: med, p25, p75, range: [med - p25, p75 - med], n: valid.length }
+/**
+ * Duration of each step, counting only steps that finished after `since`
+ * (null = all). Durations outside 0–365 days are treated as typos.
+ */
+export function buildMilestoneData(records: TimelineRecord[], since: string | null): MilestonePoint[] {
+  function stage(from: keyof TimelineRecord, to: keyof TimelineRecord) {
+    const sorted = records
+      .filter((r) => r[from] && r[to] && (since === null || (r[to] as string) > since))
+      .map((r) => daysBetween(r[from] as string, r[to] as string))
+      .filter((d) => d >= 0 && d <= 365)
+      .sort((a, b) => a - b)
+    const med = quantileCI(sorted, 0.5)
+    const p25 = quantileCI(sorted, 0.25)
+    const p75 = quantileCI(sorted, 0.75)
+    return {
+      median: med?.value ?? null,
+      p25: p25?.value ?? null,
+      p75: p75?.value ?? null,
+      range: med && p25 && p75 ? ([med.value - p25.value, p75.value - med.value] as [number, number]) : null,
+      n: sorted.length,
+    }
   }
 
-  const bioNotice = records
-    .filter((r) => r.date_applied && r.biometrics_requested_date)
-    .map((r) => daysBetween(r.date_applied!, r.biometrics_requested_date!))
-  const bioAppt = records
-    .filter((r) => r.biometrics_requested_date && r.biometrics_completed_date)
-    .map((r) => daysBetween(r.biometrics_requested_date!, r.biometrics_completed_date!))
-  const bioToApproval = records
-    .filter((r) => r.biometrics_completed_date && r.date_approved)
-    .map((r) => daysBetween(r.biometrics_completed_date!, r.date_approved!))
-  const approvedToCard = records
-    .filter((r) => r.date_approved && r.date_card_produced)
-    .map((r) => daysBetween(r.date_approved!, r.date_card_produced!))
-  const cardToReceived = records
-    .filter((r) => r.date_card_produced && r.date_card_received)
-    .map((r) => daysBetween(r.date_card_produced!, r.date_card_received!))
-
   return [
-    { stage: 'Applied → Bio Notice', ...stageStats(bioNotice), bioOnly: true },
-    { stage: 'Bio Notice → Appt', ...stageStats(bioAppt), bioOnly: true },
-    { stage: 'Bio Appt → Approved', ...stageStats(bioToApproval), bioOnly: true },
-    { stage: 'Approved → Card Produced', ...stageStats(approvedToCard), bioOnly: false },
-    { stage: 'Card Produced → Received', ...stageStats(cardToReceived), bioOnly: false },
+    { stage: 'Applied → Bio Notice', ...stage('date_applied', 'biometrics_requested_date'), bioOnly: true },
+    { stage: 'Bio Notice → Appt', ...stage('biometrics_requested_date', 'biometrics_completed_date'), bioOnly: true },
+    { stage: 'Bio Appt → Approved', ...stage('biometrics_completed_date', 'date_approved'), bioOnly: true },
+    { stage: 'Approved → Card Produced', ...stage('date_approved', 'date_card_produced'), bioOnly: false },
+    { stage: 'Card Produced → Received', ...stage('date_card_produced', 'date_card_received'), bioOnly: false },
   ]
 }
 
-export function buildCountryData(records: TimelineRecord[], minN = 3): CountryBreakdown[] {
+/** Median wait by citizenship, for countries with enough recent approvals. */
+export function buildCountryData(recent: TimelineRecord[]): CountryBreakdown[] {
   const groups: Record<string, number[]> = {}
-  for (const r of records) {
-    if (!r.country_of_citizenship || typeof r.days_to_approval !== 'number') continue
-    if (r.days_to_approval <= 0 || r.days_to_approval >= 400) continue
-    groups[r.country_of_citizenship] ??= []
-    groups[r.country_of_citizenship].push(r.days_to_approval)
+  for (const r of recent) {
+    if (!r.country_of_citizenship || !isWait(r.days_to_approval)) continue
+    ;(groups[r.country_of_citizenship] ??= []).push(r.days_to_approval)
   }
-  return Object.entries(groups)
-    .filter(([, days]) => days.length >= minN)
-    .map(([country, days]) => {
-      const sorted = [...days].sort((a, b) => a - b)
-      return {
-        country,
-        n: sorted.length,
-        median: median(sorted) ?? 0,
-        p25: sorted[Math.floor(sorted.length * 0.25)] ?? 0,
-        p75: sorted[Math.floor(sorted.length * 0.75)] ?? 0,
-      }
-    })
-    .sort((a, b) => a.median - b.median)
+  const out: CountryBreakdown[] = []
+  for (const [country, days] of Object.entries(groups)) {
+    const sorted = days.sort((a, b) => a - b)
+    const med = quantileCI(sorted, 0.5)
+    const p25 = quantileCI(sorted, 0.25)
+    const p75 = quantileCI(sorted, 0.75)
+    if (!med || !p25 || !p75) continue
+    out.push({ country, n: sorted.length, median: med.value, p25: p25.value, p75: p75.value })
+  }
+  return out.sort((a, b) => a.median - b.median)
 }
 
 export function buildMonthlyTrendData(records: TimelineRecord[]) {
