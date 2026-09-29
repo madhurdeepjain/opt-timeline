@@ -5,32 +5,29 @@ THREADS = [
     {
         "post_id": "1r6p9k0",
         "subreddit": "f1visa",
-        "year": 2026,
     },
     {
         "post_id": "1qz1n7j",
         "subreddit": "USCIS",
-        "year": 2026,
     },
     # ── 2025 ────────────────────────────────────────────────────────────────────
     {
         "post_id": "1i6230k",
         "subreddit": "USCIS",
-        "year": 2025,
     },
     {
         "post_id": "1m84yfm",
         "subreddit": "USCIS",
-        "year": 2025,
     },
     {
         "post_id": "1of7n45",
         "subreddit": "f1visa",
-        "year": 2025,
     },
 ]
 
-THREAD_YEAR_BY_POST_ID = {t["post_id"]: t["year"] for t in THREADS}
+# Megathreads found by `scrape --check-threads` that aren't worth scraping
+# (post IDs). Keeps them out of the daily "new megathreads" issue.
+IGNORED_THREADS: set[str] = set()
 
 DEFAULT_OUTPUT = str(Path(__file__).resolve().parents[3] / "dashboard" / "data" / "timeline.csv")
 
@@ -38,6 +35,7 @@ CSV_FIELDS = [
     "comment_id",
     "author",
     "created_utc",
+    "last_seen_utc",
     "subreddit",
     "permalink",
     "type",

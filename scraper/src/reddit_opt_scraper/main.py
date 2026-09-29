@@ -5,7 +5,7 @@ import os
 import sys
 import time
 import traceback
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 import click
@@ -16,28 +16,14 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from . import supastore
-from .config import THREADS, DEFAULT_OUTPUT, REQUEST_DELAY
-from .fetcher import fetch_all_comments
-from .parser import parse_comment, compute_derived, has_template_data
-from .exporter import dedupe_by_author_date, load_existing, merge, save
+from .config import THREADS, IGNORED_THREADS, DEFAULT_OUTPUT, REQUEST_DELAY
+from .fetcher import fetch_all_comments, find_new_megathreads
+from .parser import parse_comment, has_template_data, validate_dates
+from .exporter import load_existing, merge, merge_by_author, save
 
 # Load credentials from a local .env (Supabase + Reddit auth) if present.
 # In CI these come from the environment/secrets, so a missing file is fine.
 load_dotenv()
-
-# Date fields that must not be in the future. We use a single "today" snapshot
-# captured at scrape start so a long run doesn't produce inconsistent results
-# across the boundary of midnight UTC.
-_FUTURE_NULLABLE_FIELDS = (
-    "date_approved",
-    "date_card_produced",
-    "date_card_shipped",
-    "date_card_received",
-    "rfie_date",
-    "biometrics_requested_date",
-    "biometrics_completed_date",
-    "pp_upgrade_date",
-)
 
 console = Console()
 
@@ -55,9 +41,14 @@ def _build_record(comment: dict, thread: dict) -> dict | None:
     created_dt = datetime.fromtimestamp(
         comment.get("created_utc", 0), tz=timezone.utc
     )
-    thread_year = thread.get("year")
+    # Last time the author touched this comment: an edit means they reported
+    # their status as of that moment, so it bounds every date in the text.
+    edited = comment.get("edited")
+    last_seen_dt = created_dt
+    if isinstance(edited, (int, float)) and not isinstance(edited, bool) and edited > created_dt.timestamp():
+        last_seen_dt = datetime.fromtimestamp(edited, tz=timezone.utc)
 
-    parsed = parse_comment(body, thread_year=thread_year, created_utc=created_dt)
+    parsed = parse_comment(body, as_of=last_seen_dt)
     if not has_template_data(parsed):
         return None
 
@@ -65,36 +56,29 @@ def _build_record(comment: dict, thread: dict) -> dict | None:
         "comment_id": comment["id"],
         "author": author,
         "created_utc": created_dt.isoformat(),
+        "last_seen_utc": last_seen_dt.isoformat(),
         "subreddit": thread["subreddit"],
         "permalink": f"https://reddit.com{comment.get('permalink', '')}",
         **parsed,
         "raw_text": body,
     }
-    today_iso = date.today().isoformat()
+    return validate_dates(record, last_seen_dt)
 
-    # Null out dates that are logically impossible (year typos)
-    date_applied = record.get("date_applied")
-    if date_applied:
-        for field in ("biometrics_completed_date", "biometrics_requested_date", "rfie_date"):
-            if record.get(field) and record[field] < date_applied:
-                record[field] = None
-        for field in ("date_approved", "date_card_produced", "date_card_shipped", "date_card_received"):
-            if record.get(field) and record[field] < date_applied:
-                record[field] = None
 
-    # Null out future-dated downstream fields — these can't have happened yet.
-    for field in _FUTURE_NULLABLE_FIELDS:
-        v = record.get(field)
-        if v and v > today_iso:
-            record[field] = None
-
-    record = compute_derived(record)
-
-    # Drop records where date_applied is in the future — likely a typo
-    if date_applied and date_applied > today_iso:
-        return None
-
-    return record
+def _check_threads() -> None:
+    """Print candidate megathreads (one Markdown bullet each); nothing if none."""
+    subreddits = sorted({t["subreddit"] for t in THREADS})
+    known = {t["post_id"] for t in THREADS} | IGNORED_THREADS
+    with httpx.Client() as client:
+        found = find_new_megathreads(
+            client,
+            subreddits,
+            known,
+            cookie=os.environ.get("REDDIT_COOKIE") or None,
+            token=os.environ.get("REDDIT_TOKEN") or None,
+        )
+    for t in found:
+        print(f"- [r/{t['subreddit']}: {t['title']}]({t['url']}) · `{t['post_id']}` · {t['num_comments']} comments")
 
 
 @click.command()
@@ -102,9 +86,14 @@ def _build_record(comment: dict, thread: dict) -> dict | None:
 @click.option("--no-merge", is_flag=True, default=False, help="Overwrite instead of merging with existing records")
 @click.option("--csv", "force_csv", is_flag=True, default=False, help="Write to CSV even if Supabase env vars are set")
 @click.option("--yes", "-y", "assume_yes", is_flag=True, default=False, help="Skip the confirmation prompt before writing to Supabase")
+@click.option("--check-threads", is_flag=True, default=False, help="Only list OPT timeline megathreads missing from config.THREADS, as Markdown")
 @click.option("--verbose", "-v", is_flag=True, default=False)
-def cli(output: str, no_merge: bool, force_csv: bool, assume_yes: bool, verbose: bool) -> None:
+def cli(output: str, no_merge: bool, force_csv: bool, assume_yes: bool, check_threads: bool, verbose: bool) -> None:
     """Scrape OPT/STEM OPT processing timelines and save to Supabase or CSV."""
+    if check_threads:
+        _check_threads()
+        return
+
     out_path = Path(output)
     sb_url, sb_key = supastore.supabase_config()
     use_supabase = bool(sb_url and sb_key) and not force_csv
@@ -182,8 +171,8 @@ def cli(output: str, no_merge: bool, force_csv: bool, assume_yes: bool, verbose:
     tbl.add_row("Existing records", str(len(existing)))
     merged = merge(existing, all_fresh)
     tbl.add_row("After merge", str(len(merged)))
-    final = dedupe_by_author_date(merged)
-    tbl.add_row("After dedupe (author+date_applied)", str(len(final)))
+    final = merge_by_author(merged)
+    tbl.add_row("After merging each author's posts", str(len(final)))
     console.print(tbl)
 
     if use_supabase:

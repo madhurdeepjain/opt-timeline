@@ -12,7 +12,7 @@ Bearer auth  → requests go to oauth.reddit.com with Authorization: Bearer.
   (Reddit requires the oauth. subdomain when a bearer token is present.)
 """
 
-import os
+import re
 import time
 from typing import Iterator
 
@@ -22,6 +22,7 @@ from .config import USER_AGENT, REQUEST_DELAY
 
 _MAX_RETRIES = 6
 _RETRY_BASE = 60  # seconds for first 429 backoff if no Retry-After header
+_MAX_EXPAND_ATTEMPTS = 3  # times a single `more` id is requested before giving up
 
 _BASE_HEADERS = {
     "User-Agent": USER_AGENT,
@@ -100,14 +101,35 @@ def _fetch_more_children(
     token: str | None,
     batch_size: int = 100,
 ) -> list[dict]:
+    """Expand top-level `more` stubs into comments.
+
+    Reddit answers a batch of ids with only some of them expanded; the rest come
+    back wrapped in a nested top-level `more` stub (roughly a third per batch).
+    Those ids go back on the queue until every top-level id has been seen.
+    Each id is requested at most _MAX_EXPAND_ATTEMPTS times; leftovers are reported.
+    """
     all_comments: list[dict] = []
     path = "/api/morechildren" if token else "/api/morechildren.json"
     url = ("https://oauth.reddit.com" if token else "https://www.reddit.com") + path
-    total_batches = (len(more_ids) + batch_size - 1) // batch_size
 
-    for batch_num, i in enumerate(range(0, len(more_ids), batch_size), start=1):
-        batch = more_ids[i : i + batch_size]
-        print(f"  [morechildren] batch {batch_num}/{total_batches} ({len(batch)} ids)…", flush=True)
+    queue = list(dict.fromkeys(more_ids))
+    in_queue = set(queue)
+    got: set[str] = set()
+    attempts: dict[str, int] = {}
+    batch_num = 0
+
+    def enqueue(cid: str) -> None:
+        if cid not in got and cid not in in_queue and attempts.get(cid, 0) < _MAX_EXPAND_ATTEMPTS:
+            in_queue.add(cid)
+            queue.append(cid)
+
+    while queue:
+        batch, queue = queue[:batch_size], queue[batch_size:]
+        in_queue.difference_update(batch)
+        for cid in batch:
+            attempts[cid] = attempts.get(cid, 0) + 1
+        batch_num += 1
+        print(f"  [morechildren] batch {batch_num} ({len(batch)} ids, {len(queue)} queued)…", flush=True)
         try:
             data = _get(
                 client,
@@ -115,21 +137,51 @@ def _fetch_more_children(
                 params={"api_type": "json", "link_id": f"t3_{post_id}", "children": ",".join(batch)},
                 headers=headers,
             )
-            things = data.get("json", {}).get("data", {}).get("things", [])
-            top_level = [
-                t for t in things
-                if t["kind"] == "t1" and t["data"].get("parent_id", "").startswith("t3_")
-            ]
-            all_comments.extend(t["data"] for t in top_level)
-            print(
-                f"  [morechildren] batch {batch_num}/{total_batches} → "
-                f"{len(top_level)} top-level ({len(things)} total things)",
-                flush=True,
-            )
         except Exception as exc:
             print(f"  [warn] morechildren batch {batch_num} failed: {exc}", flush=True)
+            for cid in batch:
+                enqueue(cid)
+            time.sleep(REQUEST_DELAY)
+            continue
+
+        new = 0
+        for t in data.get("json", {}).get("data", {}).get("things", []):
+            d = t["data"]
+            if not d.get("parent_id", "").startswith("t3_"):
+                continue  # replies and reply stubs: we only want top-level comments
+            if t["kind"] == "t1" and d["id"] not in got:
+                got.add(d["id"])
+                all_comments.append(d)
+                new += 1
+            elif t["kind"] == "more":
+                for cid in d.get("children", []):
+                    enqueue(cid)
+        print(f"  [morechildren] batch {batch_num} → {new} top-level", flush=True)
         time.sleep(REQUEST_DELAY)
 
+    # morechildren silently drops some ids. Most are deleted/removed comments, but
+    # not all, so look the rest up directly (api/info takes 100 ids per call).
+    missing = sorted(set(attempts) - got)
+    if missing:
+        print(f"  [info] looking up {len(missing)} ids morechildren didn't return…", flush=True)
+        info_url = ("https://oauth.reddit.com" if token else "https://www.reddit.com") + (
+            "/api/info" if token else "/api/info.json"
+        )
+        recovered = 0
+        for i in range(0, len(missing), batch_size):
+            ids = ",".join(f"t1_{cid}" for cid in missing[i : i + batch_size])
+            try:
+                data = _get(client, info_url, params={"id": ids, "raw_json": 1}, headers=headers)
+            except Exception as exc:
+                print(f"  [warn] api/info lookup failed: {exc}", flush=True)
+                continue
+            for t in data.get("data", {}).get("children", []):
+                d = t["data"]
+                if d.get("parent_id", "").startswith("t3_") and d.get("body") not in ("[deleted]", "[removed]"):
+                    all_comments.append(d)
+                    recovered += 1
+            time.sleep(REQUEST_DELAY)
+        print(f"  [info] recovered {recovered}; the other {len(missing) - recovered} are deleted or removed", flush=True)
     return all_comments
 
 
@@ -167,3 +219,49 @@ def fetch_all_comments(
     if more_ids:
         for c in _fetch_more_children(post_id, more_ids, client, headers, token):
             yield c
+
+
+# Megathread titles look like "OPT/STEM OPT Processing Timelines Megathread",
+# "2026 OPT and STEM OPT Processing Timeline" or "2025 OPT Timeline Continued".
+# Questions like "OPT card delivery timeline after approval?" match none of these
+# and rarely reach the comment floor.
+_MEGATHREAD_TITLE = re.compile(
+    r"\bmegathread\b|\bprocessing\s+timelines?\b|\b20\d\d\b.*\bOPT\b.*\btimelines?\b", re.I
+)
+_MEGATHREAD_MIN_COMMENTS = 200
+
+
+def find_new_megathreads(
+    client: httpx.Client,
+    subreddits: list[str],
+    known_post_ids: set[str],
+    *,
+    cookie: str | None = None,
+    token: str | None = None,
+) -> list[dict]:
+    """Search each subreddit for OPT timeline megathreads not in the config."""
+    headers = _build_headers(cookie, token)
+    found: dict[str, dict] = {}
+    for sub in subreddits:
+        data = _get(
+            client,
+            _reddit_url(f"/r/{sub}/search.json", token),
+            params={"q": "OPT timeline", "restrict_sr": 1, "sort": "new", "t": "year", "limit": 100, "raw_json": 1},
+            headers=headers,
+        )
+        for child in data.get("data", {}).get("children", []):
+            post = child["data"]
+            if (
+                post["id"] not in known_post_ids
+                and post.get("num_comments", 0) >= _MEGATHREAD_MIN_COMMENTS
+                and _MEGATHREAD_TITLE.search(post.get("title", ""))
+            ):
+                found[post["id"]] = {
+                    "post_id": post["id"],
+                    "subreddit": post["subreddit"],
+                    "title": post["title"],
+                    "num_comments": post["num_comments"],
+                    "url": f"https://www.reddit.com{post['permalink']}",
+                }
+        time.sleep(REQUEST_DELAY)
+    return sorted(found.values(), key=lambda t: -t["num_comments"])

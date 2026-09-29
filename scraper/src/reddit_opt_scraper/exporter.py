@@ -1,53 +1,19 @@
 """Read/write the timeline CSV."""
 
 import csv
-import re
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
 
-from .config import CSV_FIELDS, THREAD_YEAR_BY_POST_ID
+from .config import CSV_FIELDS
 from .parser import (
     _normalize_citizenship,
     _normalize_service_center,
     compute_derived,
     has_template_data,
     parse_comment,
+    validate_dates,
 )
-
-# Fields that must be >= date_applied or are nulled out as typos.
-_AFTER_APPLIED_FIELDS = (
-    "rfie_date",
-    "biometrics_requested_date",
-    "biometrics_completed_date",
-    "date_approved",
-    "date_card_produced",
-    "date_card_shipped",
-    "date_card_received",
-)
-
-# Date fields that must not be in the future.
-_FUTURE_NULLABLE_FIELDS = (
-    "date_approved",
-    "date_card_produced",
-    "date_card_shipped",
-    "date_card_received",
-    "rfie_date",
-    "biometrics_requested_date",
-    "biometrics_completed_date",
-    "pp_upgrade_date",
-)
-
-_POST_ID_RE = re.compile(r"/comments/([a-z0-9]+)/", re.I)
-
-
-def _thread_year_from_permalink(permalink: str | None) -> int | None:
-    if not permalink:
-        return None
-    m = _POST_ID_RE.search(permalink)
-    if not m:
-        return None
-    return THREAD_YEAR_BY_POST_ID.get(m.group(1))
 
 
 def _parse_iso_dt(s: str | None) -> datetime | None:
@@ -76,13 +42,14 @@ def _rehabilitate(row: dict) -> dict | None:
     Returns None if the row should be dropped (future-dated, no usable data).
     """
     r = dict(row)
-    thread_year = _thread_year_from_permalink(r.get("permalink"))
-    created_dt = _parse_iso_dt(r.get("created_utc"))
+    # Rows stored before last_seen_utc existed have no known edit time, so the
+    # only safe bound is now (their creation time would drop edited-in dates).
+    as_of = _parse_iso_dt(r.get("last_seen_utc"))
 
     # Re-parse from raw_text to pick up fields missed by older parser versions.
     raw = r.get("raw_text") or ""
     if raw:
-        parsed = parse_comment(raw, thread_year=thread_year, created_utc=created_dt)
+        parsed = parse_comment(raw, as_of=as_of)
         for k, v in parsed.items():
             # Only fill if currently empty — never overwrite existing value
             # (the original parse may have caught something the re-parse misses).
@@ -104,23 +71,9 @@ def _rehabilitate(row: dict) -> dict | None:
     sc = r.get("service_center")
     if sc:
         r["service_center"] = _normalize_service_center(sc)
-    today_iso = date.today().isoformat()
-    # Drop future-dated date_applied
-    da = r.get("date_applied") or None
-    if da and da > today_iso:
+    r = validate_dates(r, as_of)
+    if r is None:
         return None
-    # Null out impossibly-early downstream dates
-    if da:
-        for f in _AFTER_APPLIED_FIELDS:
-            if r.get(f) and r[f] < da:
-                r[f] = None
-    # Null out future-dated downstream fields — events that can't have happened yet.
-    for f in _FUTURE_NULLABLE_FIELDS:
-        v = r.get(f)
-        if v and v > today_iso:
-            r[f] = None
-    # Recompute derived fields
-    r = compute_derived(r)
     if not has_template_data(r):
         return None
     return r
@@ -160,38 +113,83 @@ def merge(existing: dict[str, dict], fresh: list[dict]) -> list[dict]:
     return list(merged.values())
 
 
-def dedupe_by_author_date(records: list[dict]) -> list[dict]:
-    """Collapse multiple comments by the same author for the same date_applied.
+# Two posts by one author describe the same application unless they contradict:
+# dates this far apart are different events, not a receipt-vs-filing gap or typo.
+_SAME_DATE_TOLERANCE_DAYS = 7
+# An application doesn't stay open this long; posts further apart are separate.
+_MAX_SPAN_DAYS = 300
 
-    Keeps the record with the latest created_utc and unions in any non-null
-    fields from earlier versions (latest wins on conflict). Records missing
-    author or date_applied are kept as-is.
+
+def _days_apart(a: str, b: str) -> int:
+    return abs((date.fromisoformat(a[:10]) - date.fromisoformat(b[:10])).days)
+
+
+def _touched(r: dict) -> str:
+    return r.get("last_seen_utc") or r.get("created_utc") or ""
+
+
+def _compatible(app: dict, r: dict) -> bool:
+    if app.get("normalized_type") and r.get("normalized_type") and app["normalized_type"] != r["normalized_type"]:
+        return False
+    for f in ("date_applied", "date_approved"):
+        if app.get(f) and r.get(f) and _days_apart(app[f], r[f]) > _SAME_DATE_TOLERANCE_DAYS:
+            return False
+    return _days_apart(_touched(app), r.get("created_utc") or _touched(app)) <= _MAX_SPAN_DAYS
+
+
+def merge_by_author(records: list[dict]) -> list[dict]:
+    """Collapse each author's posts about the same application into one record.
+
+    People post status updates as new comments ("approved today!") and repost
+    across threads, so one application can span several comments, some without
+    an applied date. Each post joins the author's most recently touched
+    application it doesn't contradict (see _compatible); otherwise it starts a
+    new one. Within an application the most recently touched post wins on each
+    field and fills gaps from the others. The merged record keeps that post's
+    comment_id and permalink, and the latest last_seen_utc.
     """
-    groups: dict[tuple, list[dict]] = defaultdict(list)
-    standalone: list[dict] = []
+    by_author: dict[str, list[dict]] = defaultdict(list)
+    result: list[dict] = []
     for r in records:
-        author = r.get("author")
-        applied = r.get("date_applied")
-        if author and applied:
-            groups[(author, applied)].append(r)
+        # "[deleted]" is many different people, never one author.
+        if r.get("author") and r["author"] != "[deleted]":
+            by_author[r["author"]].append(r)
         else:
-            standalone.append(r)
+            result.append(r)
 
-    result: list[dict] = list(standalone)
-    for group in groups.values():
-        if len(group) == 1:
-            result.append(group[0])
-            continue
-        # Sort oldest → newest by created_utc (ISO strings sort lexicographically)
-        group.sort(key=lambda x: x.get("created_utc") or "")
-        merged = dict(group[-1])
-        for earlier in group[:-1]:
-            for k, v in earlier.items():
-                if not merged.get(k) and v:
-                    merged[k] = v
-        merged = compute_derived(merged)
-        result.append(merged)
+    for posts in by_author.values():
+        apps: list[list[dict]] = []  # each: posts oldest → newest
+        views: list[dict] = []       # merged view of each app, for compatibility checks
+        for r in sorted(posts, key=lambda x: x.get("created_utc") or ""):
+            candidates = [i for i, v in enumerate(views) if _compatible(v, r)]
+            if candidates:
+                i = max(candidates, key=lambda j: _touched(views[j]))
+                apps[i].append(r)
+                views[i] = _combine(apps[i])
+            else:
+                apps.append([r])
+                views.append(dict(r))
+        for app, view in zip(apps, views):
+            if len(app) == 1:
+                result.append(app[0])
+                continue
+            as_of = datetime.fromisoformat(view["last_seen_utc"]) if view.get("last_seen_utc") else None
+            merged = validate_dates(view, as_of)
+            if merged is not None:
+                result.append(merged)
     return result
+
+
+def _combine(posts: list[dict]) -> dict:
+    ordered = sorted(posts, key=_touched)
+    merged = dict(ordered[-1])
+    for earlier in reversed(ordered[:-1]):
+        for k, v in earlier.items():
+            if merged.get(k) in (None, "") and v not in (None, ""):
+                merged[k] = v
+    seen = [p["last_seen_utc"] for p in posts if p.get("last_seen_utc")]
+    merged["last_seen_utc"] = max(seen) if seen else None
+    return compute_derived(merged)
 
 
 def save(records: list[dict], path: Path) -> None:

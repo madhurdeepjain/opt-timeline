@@ -7,6 +7,10 @@ on:
     - cron: "0 6 * * *" # 06:00 UTC daily
   workflow_dispatch: {} # manual trigger
 
+permissions:
+  contents: read
+  issues: write # to open an issue when a new megathread shows up
+
 concurrency:
   group: update-data
   cancel-in-progress: false
@@ -14,7 +18,8 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Reddit's rate limit (~100 requests / 10 min) makes a full fetch take ~20 min.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,4 +38,26 @@ jobs:
           REDDIT_COOKIE: ${{ secrets.REDDIT_COOKIE }}
         run: |
           uv sync
+          uv run python -m unittest discover -s tests  # a broken parser must not write data
           uv run scrape --yes
+
+      - name: Look for new megathreads
+        working-directory: scraper
+        continue-on-error: true # never fail the data update over this
+        env:
+          REDDIT_COOKIE: ${{ secrets.REDDIT_COOKIE }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # keep only the result bullets (progress/rate-limit logs also go to stdout)
+          found="$(uv run scrape --check-threads | grep '^- \[' || true)"
+          [ -z "$found" ] && exit 0
+          title="New OPT timeline megathreads to review"
+          body="$(printf '%s\n\n%s\n' \
+            'Found by the daily scrape. Add relevant ones to `THREADS` (scraper/src/reddit_opt_scraper/config.py) and `THREAD_OPTIONS` (dashboard/src/lib/types.ts); add irrelevant ones to `IGNORED_THREADS` in config.py.' \
+            "$found")"
+          existing="$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number')"
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

@@ -1,7 +1,7 @@
 """Parse OPT timeline template fields from Reddit comment bodies."""
 
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 # ── Null/empty sentinel values ────────────────────────────────────────────────
@@ -15,150 +15,151 @@ NULL_VALUES = frozenset(
 )
 
 # ── Date parsing ──────────────────────────────────────────────────────────────
-# Pairs of (strptime format, regex to locate candidate in string)
-_DATE_FORMATS = [
-    ("%m/%d/%Y", re.compile(r"\b\d{1,2}/\d{1,2}/\d{4}\b")),
-    ("%Y-%m-%d", re.compile(r"\b\d{4}-\d{2}-\d{2}\b")),
-    ("%m-%d-%Y", re.compile(r"\b\d{1,2}-\d{1,2}-\d{4}\b")),
-    ("%m/%d/%y", re.compile(r"\b\d{1,2}/\d{1,2}/\d{2}\b")),
-    # Month-name formats: "Feb 2, 2026" / "February 2, 2026"
-    ("%b %d, %Y", re.compile(r"\b[A-Za-z]{3,9}\s+\d{1,2},\s*\d{4}\b")),
-    ("%B %d, %Y", re.compile(r"\b[A-Za-z]{3,9}\s+\d{1,2},\s*\d{4}\b")),
-    # Day-first month-name formats: "16 Oct 2025" / "16 October 2025"
-    ("%d %b %Y", re.compile(r"\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b")),
-    ("%d %B %Y", re.compile(r"\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b")),
-]
+# Posters write dates every way imaginable: 05/19/2026, 5/19, 2026-05-19,
+# 2026/05/19, May 19th, 2026, 19 May, 19th of May 2026, Mar. 4, 20/Mar, May 2026.
+# Each pattern below yields candidate (year, month, day) readings in order of
+# preference; parse_date takes the earliest match in the text and the first
+# candidate that is a real date and fits the "must already have happened" bound.
 
-# Normalize "Sept" → "Sep" since strptime's %b only accepts the 3-letter abbreviation.
-_SEPT_FIX = re.compile(r"\bSept\b", re.I)
+_MON = (
+    r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?"
+    r"|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?"
+)
+_MONTH_NUM = {m: i for i, m in enumerate(
+    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+_ORD = r"(?:st|nd|rd|th)?"
+_YEAR = r"(20\d\d)"
 
-# Month-year only formats checked LAST — after ordinal checks — to avoid intercepting
-# "30th Jan 2026" and returning Jan 1 instead of Jan 30.
-_MONTH_YEAR_FORMATS = [
-    ("%b %Y", re.compile(r"\b[A-Za-z]{3,9}\s+\d{4}\b")),
-    ("%B %Y", re.compile(r"\b[A-Za-z]{3,9}\s+\d{4}\b")),
-]
+_P_YMD = re.compile(r"\b(20\d\d)[-/.](\d{1,2})[-/.](\d{1,2})\b")
+_P_NUMERIC = re.compile(r"\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})\b")
+_P_MON_DAY = re.compile(rf"\b{_MON}\s*(\d{{1,2}}){_ORD}(?!\d)(?:\s*,?\s*{_YEAR}\b)?", re.I)
+_P_DAY_MON = re.compile(rf"\b(\d{{1,2}}){_ORD}\s*(?:of\s+)?{_MON}(?![a-z])(?:\s*,?\s*{_YEAR}\b)?", re.I)
+_P_DAY_SLASH_MON = re.compile(rf"\b(\d{{1,2}})[/-]{_MON}(?![a-z])", re.I)
+_P_NUMERIC_NO_YEAR = re.compile(r"\b(\d{1,2})/(\d{1,2})\b(?!/)")
+_P_MON_YEAR = re.compile(rf"\b{_MON}\s+{_YEAR}\b", re.I)
 
-_SLASH_DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
 # Normalise malformed slashes ("05 / 15 / 2025", "03//04/2026") before matching
 _SLASH_NORMALIZE = re.compile(r"\s*/+\s*")
 
-# Ordinal date with year: "13th Oct 2025", "2nd Nov 2025", "1st Jan 2026"
-_ORDINAL_DATE = re.compile(
-    r"\b(\d{1,2})(?:st|nd|rd|th)\s+([A-Za-z]{3,9})\s+(\d{4})\b", re.I
-)
-# Ordinal date without year: "3rd May", "28th Jan" — year inferred from context
-_ORDINAL_DATE_NO_YEAR = re.compile(
-    r"\b(\d{1,2})(?:st|nd|rd|th)\s+([A-Za-z]{3,9})\b(?!\s*\d{4})", re.I
-)
+# An explicit year this far past the comment's date is last year's date with the
+# current year typed ("24th Dec 2026" written in Feb 2026). Closer than this it's
+# a scheduled or mistyped future event, which can't have been reported as done.
+_YEAR_TYPO_MIN_DAYS = 90
 
 
-def parse_date(
-    value: str,
-    *,
-    thread_year: Optional[int] = None,
-    created_utc: Optional[datetime] = None,
-) -> Optional[str]:
+def _mdy(month: int, day: int, year: int) -> Optional[date]:
+    try:
+        d = date(year, month, day)
+    except ValueError:
+        return None
+    return d if 2020 <= d.year <= 2035 else None
+
+
+def _candidates(m: re.Match, kind: str) -> list[tuple[int, int, Optional[int]]]:
+    """(month, day, year-or-None) readings for a match, most likely first."""
+    g = m.groups()
+    if kind == "ymd":
+        return [(int(g[1]), int(g[2]), int(g[0]))]
+    if kind == "numeric":
+        a, b, y = int(g[0]), int(g[1]), int(g[2])
+        y = y + 2000 if y < 100 else y
+        # MM/DD first (the template's format); DD/MM when MM/DD is impossible or
+        # when both readings are valid months (resolved by the past-date bound).
+        return [(a, b, y), (b, a, y)]
+    if kind == "mon_day":
+        return [(_MONTH_NUM[g[0][:3].lower()], int(g[1]), int(g[2]) if g[2] else None)]
+    if kind == "day_mon":
+        return [(_MONTH_NUM[g[1][:3].lower()], int(g[0]), int(g[2]) if g[2] else None)]
+    if kind == "day_slash_mon":
+        return [(_MONTH_NUM[g[1][:3].lower()], int(g[0]), None)]
+    if kind == "numeric_no_year":
+        a, b = int(g[0]), int(g[1])
+        return [(a, b, None), (b, a, None)]
+    if kind == "mon_year":
+        return [(_MONTH_NUM[g[0][:3].lower()], 1, int(g[1]))]
+    return []
+
+
+_PATTERNS = [
+    (_P_YMD, "ymd"),
+    (_P_NUMERIC, "numeric"),
+    (_P_MON_DAY, "mon_day"),
+    (_P_DAY_MON, "day_mon"),
+    (_P_DAY_SLASH_MON, "day_slash_mon"),
+    (_P_NUMERIC_NO_YEAR, "numeric_no_year"),
+]
+
+
+def parse_date(value: str, *, as_of: Optional[datetime] = None, past: bool = True) -> Optional[str]:
     """Return ISO YYYY-MM-DD or None. Accepts values like 'YES | 02/14/2026'.
 
-    For dates without a year ("6th April"), the year is inferred from
-    ``thread_year`` (the OPT cycle the thread is about) first, falling back to
-    the year of ``created_utc`` if no thread context was given. When both
-    candidates parse, prefers the latest one that is not after ``created_utc``
-    (the event must have already happened by the time the comment was written).
+    ``as_of`` is the last moment the text could describe: the comment's latest
+    edit, or its creation time if never edited. ``past`` marks events that must
+    already have happened by then (everything except start/graduation dates):
+
+    - a date without a year is the most recent such day on or before ``as_of``;
+    - MM/DD is preferred, DD/MM used when MM/DD is impossible or in the future;
+    - an explicit year far in the future is read as the year before (a typo);
+    - a date that still lands in the future is rejected.
+
+    Thread years aren't used: megathreads run across New Year, and an approval
+    added in a January edit belongs to that January, not the previous one.
     """
     if not value:
         return None
     v = value.strip()
     if v.lower() in NULL_VALUES:
         return None
-
-    # Normalise malformed slashes: "05 / 15 / 2025" → "05/15/2025", "03//04" → "03/04"
     v = _SLASH_NORMALIZE.sub("/", v)
-    # "Sept" → "Sep" so %b parses cleanly.
-    v = _SEPT_FIX.sub("Sep", v)
 
-    # Detect DD/MM/YYYY: if the first segment > 12 it can't be a month
-    m = _SLASH_DATE.search(v)
-    if m:
-        a, b, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        if a > 12 and b <= 12:
-            try:
-                d = datetime(year, b, a)
-                if 2020 <= d.year <= 2035:
-                    return d.strftime("%Y-%m-%d")
-            except ValueError:
-                pass
+    ref = (as_of or datetime.now()).date()
+    # +1 day: the poster's local date can be ahead of UTC (up to UTC+14).
+    ceiling = ref + timedelta(days=1)
 
-    for fmt, pat in _DATE_FORMATS:
-        m = pat.search(v)
-        if m:
-            try:
-                d = datetime.strptime(m.group(), fmt)
-                if 2020 <= d.year <= 2035:
-                    return d.strftime("%Y-%m-%d")
-            except ValueError:
+    # The earliest date expression is the field's value ("05/19 (email); 05/21
+    # (portal)" → 05/19). Later ones are usually notes about other events
+    # ("02/18/2006 (PP on 5/11)"), so a garbled first date isn't replaced by them.
+    first = min(
+        ((m.start(), i, m, kind) for i, (pat, kind) in enumerate(_PATTERNS) if (m := pat.search(v))),
+        default=None,
+    )
+    if first:
+        _, _, m, kind = first
+    else:
+        m, kind = _P_MON_YEAR.search(v), "mon_year"  # "May 2026" → 1st of month
+        if not m:
+            return None
+    d = _resolve(_candidates(m, kind), ref, ceiling, past)
+    return d.isoformat() if d else None
+
+
+def _resolve(readings: list[tuple[int, int, Optional[int]]], ref: date, ceiling: date, past: bool) -> Optional[date]:
+    for month, day, year in readings:
+        if year is None:
+            # Yearless: nearest past occurrence (or, for future-allowed fields,
+            # the occurrence closest to when it was written).
+            years = (ref.year, ref.year - 1) if past else (ref.year + 1, ref.year, ref.year - 1)
+            opts = [d for y in years if (d := _mdy(month, day, y))]
+            if past:
+                opts = [d for d in opts if d <= ceiling]
+                if opts:
+                    return max(opts)
+            elif opts:
+                return min(opts, key=lambda d: abs((d - ref).days))
+            continue
+        d = _mdy(month, day, year)
+        if d and (not past or d <= ceiling):
+            return d
+    if past:
+        # Explicit year but every reading is in the future: last year's date typed
+        # with this year, if it's far enough ahead to not be a scheduled event.
+        for month, day, year in readings:
+            if year is None:
                 continue
-
-    # Ordinal with year: "13th Oct 2025", "2nd Nov 2025", "21st March 2025"
-    m = _ORDINAL_DATE.search(v)
-    if m:
-        candidate = f"{m.group(1)} {m.group(2)} {m.group(3)}"
-        for fmt in ("%d %b %Y", "%d %B %Y"):
-            try:
-                d = datetime.strptime(candidate, fmt)
-                if 2020 <= d.year <= 2035:
-                    return d.strftime("%Y-%m-%d")
-            except ValueError:
-                continue
-
-    # Ordinal without year: "3rd May", "28th Jan". Anchor inference to the
-    # thread year (the OPT cycle) when known; otherwise the comment's
-    # created_utc year. Try the anchor and the year before it, and pick the
-    # latest candidate that's not after the comment was written.
-    m = _ORDINAL_DATE_NO_YEAR.search(v)
-    if m:
-        if thread_year is not None:
-            anchor = thread_year
-        elif created_utc is not None:
-            anchor = created_utc.year
-        else:
-            anchor = datetime.now().year
-        ceiling = created_utc or datetime.now()
-
-        candidates: list[datetime] = []
-        for yr in (anchor, anchor - 1):
-            cand_text = f"{m.group(1)} {m.group(2)} {yr}"
-            for fmt in ("%d %b %Y", "%d %B %Y"):
-                try:
-                    d = datetime.strptime(cand_text, fmt)
-                except ValueError:
-                    continue
-                if 2020 <= d.year <= 2035:
-                    candidates.append(d)
-                    break
-
-        if candidates:
-            # Prefer the most recent candidate that's not in the future
-            # relative to when the comment was posted.
-            plausible = [d for d in candidates if d.date() <= ceiling.date()]
-            chosen = max(plausible) if plausible else min(candidates)
-            return chosen.strftime("%Y-%m-%d")
-
-    # Month-year only: "May 2026", "December 2025" → 1st of month.
-    # Checked last so ordinal dates ("30th Jan 2026") are never intercepted.
-    for fmt, pat in _MONTH_YEAR_FORMATS:
-        m = pat.search(v)
-        if m:
-            try:
-                d = datetime.strptime(m.group(), fmt)
-                if 2020 <= d.year <= 2035:
-                    return d.strftime("%Y-%m-%d")
-            except ValueError:
-                continue
-
+            d = _mdy(month, day, year)
+            if d and (d - ceiling).days >= _YEAR_TYPO_MIN_DAYS and (prev := _mdy(month, day, year - 1)) and prev <= ceiling:
+                return prev
     return None
-
 
 def parse_bool(value: str) -> Optional[bool]:
     v = value.strip().lower()
@@ -202,8 +203,7 @@ _PP_OTHER_FIELDS = re.compile(
 def _pp_upgrade_date(
     v: str,
     *,
-    thread_year: Optional[int] = None,
-    created_utc: Optional[datetime] = None,
+    as_of: Optional[datetime] = None,
 ) -> Optional[str]:
     """Return the upgrade date from a PP value string.
 
@@ -212,24 +212,23 @@ def _pp_upgrade_date(
     avoid picking up dates from multiline bleeds).
     """
     for content in _PP_PAREN.findall(v):
-        d = parse_date(content, thread_year=thread_year, created_utc=created_utc)
+        d = parse_date(content, as_of=as_of)
         if d:
             return d
     m = _PP_UPGRADE_RE.search(v)
     if m:
-        d = parse_date(v[m.start():], thread_year=thread_year, created_utc=created_utc)
+        d = parse_date(v[m.start():], as_of=as_of)
         if d:
             return d
     if not _PP_OTHER_FIELDS.search(v):
-        return parse_date(v, thread_year=thread_year, created_utc=created_utc)
+        return parse_date(v, as_of=as_of)
     return None
 
 
 def parse_premium_processing(
     value: str,
     *,
-    thread_year: Optional[int] = None,
-    created_utc: Optional[datetime] = None,
+    as_of: Optional[datetime] = None,
 ) -> tuple[Optional[bool], Optional[bool], Optional[str]]:
     """Parse a PP field value into (premium_processing, pp_upgraded, pp_upgrade_date).
 
@@ -248,7 +247,7 @@ def parse_premium_processing(
 
     # Arrow upgrade: "no -> yes"
     if _PP_ARROW.search(v):
-        return True, True, _pp_upgrade_date(v, thread_year=thread_year, created_utc=created_utc)
+        return True, True, _pp_upgrade_date(v, as_of=as_of)
 
     # Strip parens (ASCII + full-width) for the boolean portion
     bool_str = _PP_PAREN.sub("", v).strip(" ,.*-/\\")
@@ -264,10 +263,10 @@ def parse_premium_processing(
     if pp_bool is None:
         # Keyword-only upgrade value: "Switched to PP on …", "Opted for Premium", "Upgraded on"
         if _PP_UPGRADE_RE.search(bool_str):
-            return True, True, _pp_upgrade_date(v, thread_year=thread_year, created_utc=created_utc)
+            return True, True, _pp_upgrade_date(v, as_of=as_of)
         # Date-only: nothing meaningful left after stripping slash-dates
         date_stripped = re.sub(r"\b\d{1,2}[/\-]\d{1,2}[/\-](?:\d{2}|\d{4})\b", "", bool_str).strip()
-        d = parse_date(v, thread_year=thread_year, created_utc=created_utc)
+        d = parse_date(v, as_of=as_of)
         if d and not date_stripped:
             return True, None, d
         # Explicit negative phrasing
@@ -276,7 +275,7 @@ def parse_premium_processing(
         return None, None, None
 
     if pp_bool is True:
-        d = _pp_upgrade_date(v, thread_year=thread_year, created_utc=created_utc)
+        d = _pp_upgrade_date(v, as_of=as_of)
         if d:
             return True, True, d
         return True, None, None
@@ -290,7 +289,7 @@ def parse_premium_processing(
         or re.search(r"\bpp\s*:", v, re.I)
     )
     if has_upgrade:
-        return True, True, _pp_upgrade_date(v, thread_year=thread_year, created_utc=created_utc)
+        return True, True, _pp_upgrade_date(v, as_of=as_of)
     return False, None, None
 
 
@@ -462,7 +461,7 @@ def _clean(text: str) -> str:
 # Each tuple: (compiled regex, normalized_key).
 # Ordered from most-specific to least-specific so the first match wins.
 _FIELD_PATTERNS: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"request\s+for\s+initial\s+evidence", re.I), "rfie_date"),
+    (re.compile(r"r?equest\s+for\s+initial\s+evidence", re.I), "rfie_date"),
     (re.compile(r"\brfie\b", re.I), "rfie_date"),
     (re.compile(r"rfe\s+for\s+biometrics", re.I), "biometrics_requested_date"),
     (re.compile(r"biometrics\s+requested", re.I), "biometrics_requested_date"),
@@ -481,9 +480,13 @@ _FIELD_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"receipt\s+date", re.I), "date_applied"),
     (re.compile(r"application\s+date", re.I), "date_applied"),
     (re.compile(r"submission\s+date", re.I), "date_applied"),
+    # Bare "Applied:", "Filed:", and the common "Data Applied" typo
+    (re.compile(r"^(?:\d+[.)]\s*)?(?:data\s+)?(?:applied|filed|filing\s+date)\b", re.I), "date_applied"),
     (re.compile(r"date\s+approved", re.I), "date_approved"),
     (re.compile(r"approved\s+date", re.I), "date_approved"),
     (re.compile(r"approval\s+date", re.I), "date_approved"),
+    # Bare "Approved:", "Approved (email):", "Approval mail date:"
+    (re.compile(r"^(?:\d+[.)]\s*)?approv(?:ed|al)\b", re.I), "date_approved"),
     (re.compile(r"date\s+card\s+produced", re.I), "date_card_produced"),
     (re.compile(r"card\s+produced\s+date", re.I), "date_card_produced"),
     (re.compile(r"card\s+produced", re.I), "date_card_produced"),
@@ -587,20 +590,52 @@ _LOC_DATE_RE = re.compile(r"\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}")
 # We avoid splitting on '-' in the middle of a line to prevent breaking hyphenated words or KV pairs.
 _LINE_SPLIT_RE = re.compile(r"\n|\s{3,}|(?<=\s)[•*]\s*|^\s*[*\-•|]\s*", re.MULTILINE)
 
+# Templates sometimes arrive flattened onto one line ("Type: OPT Premium
+# Processing: NO Date Applied: 03/13/2026 ..."): break before each known label.
+_TEMPLATE_LABELS = (
+    r"application\s+type|type|premium\s+processing|date\s+applied|applied\s+date|receipt\s+date"
+    r"|request\s+for\s+initial\s+evidence|biometrics\s+requested|biometrics\s+completed"
+    r"|notice\s+of\s+intent\s+to\s+deny|date\s+approved|approved\s+date|approval\s+date"
+    r"|date\s+card\s+produced|card\s+produced\s+date|date\s+card\s+shipped|date\s+card\s+received"
+    r"|country\s+of\s+citizenship|service\s+cent(?:er|re)"
+)
+_MULTI_KEY_SPLIT = re.compile(
+    rf"(?<=\S)[ \t\u00a0]+(?=(?:{_TEMPLATE_LABELS})\s*(?:\([^)]*\))?\s*:)", re.I
+)
+# A line without "key: value" only counts as a date field if a date follows the
+# label ("Approved on 09/18/2026"), not prose ("approval without PP? I applied…").
+_STARTS_WITH_DATE = re.compile(
+    rf"^(?:on\s+|date\s*|yes\b\s*|\([^)]*\)\s*|[-–:|*]\s*)*(?:\d|{_MON}(?![a-z]))", re.I
+)
+_DENIED = re.compile(r"\bden(?:ied|ial)\b|\breject", re.I)
+# Events that may legitimately be in the future when written.
+_FUTURE_OK_FIELDS = frozenset({"employment_start_date", "graduation_date"})
+
+
+def _line_key(line: str) -> tuple[Optional[str], Optional[str], bool]:
+    """(key, value, via_fallback) for a line, or (None, None, False)."""
+    key, value = _split_kv(line)
+    if key:
+        return key, value, False
+    # No separator: the line may start with a field name ("Citizenship India").
+    for pat, _ in _FIELD_PATTERNS:
+        m = pat.match(line)
+        if m:
+            return line[: m.end()], line[m.end():].strip(), True
+    return None, None, False
+
 
 def parse_comment(
     body: str,
     *,
-    thread_year: Optional[int] = None,
-    created_utc: Optional[datetime] = None,
+    as_of: Optional[datetime] = None,
 ) -> dict:
     """
     Parse a comment body into structured fields.
     Returns a dict of normalized field values (all optional — may be None).
 
-    ``thread_year`` and ``created_utc`` are passed down to date parsing so
-    ordinal dates without a year ("6th April") can be anchored to the OPT
-    cycle the thread is about, not to wall-clock ``now()``.
+    ``as_of`` (the comment's last edit or creation time) is passed down to
+    date parsing so dates without a year resolve to the right one.
     """
     result: dict = {
         "type": None,
@@ -630,31 +665,31 @@ def parse_comment(
     if not body:
         return result
 
-    text = _clean(body)
+    text = _MULTI_KEY_SPLIT.sub("\n", _clean(body))
+    lines = [ln.strip() for ln in _LINE_SPLIT_RE.split(text)]
+    lines = [ln for ln in lines if ln]
 
-    for raw_line in _LINE_SPLIT_RE.split(text):
-        line = raw_line.strip()
-        if not line:
-            continue
-
-        key, value = _split_kv(line)
-        
-        # Fallback: if no KV separator found, see if the line starts with a known field name
-        # followed by text (e.g. "Citizenship India").
-        if not key:
-            for pat, field in _FIELD_PATTERNS:
-                m = pat.match(line)
-                if m:
-                    key = line[:m.end()]
-                    value = line[m.end():].strip()
-                    break
-
+    i = 0
+    while i < len(lines):
+        key, value, via_fallback = _line_key(lines[i])
+        i += 1
         if not key or value is None:
             continue
 
         field = _normalize_key(key)
         if field is None:
             continue
+        is_date_field = field in _DATE_FIELDS or field == "biometrics_completed_date"
+        if via_fallback and is_date_field and not _STARTS_WITH_DATE.match(value):
+            continue
+
+        # Reddit's rich-text editor often puts the value in the next paragraph:
+        # "**Date Approved:**" then "06/11/2026".
+        if not value.strip(" *\u00a0") and i < len(lines):
+            next_key, _, _ = _line_key(lines[i])
+            if not (next_key and _normalize_key(next_key)):
+                value = lines[i]
+                i += 1
 
         if field == "type":
             if result["type"] is None:
@@ -665,7 +700,7 @@ def parse_comment(
         elif field == "premium_processing":
             if result["premium_processing"] is None:
                 pp_bool, pp_upgraded, pp_date = parse_premium_processing(
-                    value, thread_year=thread_year, created_utc=created_utc
+                    value, as_of=as_of
                 )
                 result["premium_processing"] = pp_bool
                 result["pp_upgraded"] = pp_upgraded
@@ -675,7 +710,7 @@ def parse_comment(
             # May include location after the date, e.g. "3/2/2026 - ASC Boston"
             if result["biometrics_completed_date"] is None:
                 result["biometrics_completed_date"] = parse_date(
-                    value, thread_year=thread_year, created_utc=created_utc
+                    value, as_of=as_of
                 )
                 m = _LOC_DATE_RE.search(value)
                 if m:
@@ -684,9 +719,11 @@ def parse_comment(
                         result["biometrics_location"] = suffix
 
         elif field in _DATE_FIELDS:
+            if field == "date_approved" and _DENIED.search(value):
+                continue  # "Date Approved: DENIED on May 13th" is not an approval
             if result[field] is None:
                 result[field] = parse_date(
-                    value, thread_year=thread_year, created_utc=created_utc
+                    value, as_of=as_of, past=field not in _FUTURE_OK_FIELDS
                 )
 
         elif field == "noid":
@@ -695,7 +732,7 @@ def parse_comment(
                 result["noid"] = b
                 if b:
                     result["noid_date"] = parse_date(
-                        value, thread_year=thread_year, created_utc=created_utc
+                        value, as_of=as_of
                     )
 
         elif field == "country_of_citizenship":
@@ -752,6 +789,48 @@ def compute_derived(record: dict) -> dict:
         r["pp_upgrade_date"] = None
 
     return r
+
+
+# Events that follow the application: a date before date_applied is a typo.
+_AFTER_APPLIED_FIELDS = (
+    "rfie_date",
+    "biometrics_requested_date",
+    "biometrics_completed_date",
+    "date_approved",
+    "date_card_produced",
+    "date_card_shipped",
+    "date_card_received",
+)
+# Events that must already have happened when the comment was last written.
+_PAST_EVENT_FIELDS = _AFTER_APPLIED_FIELDS + ("pp_upgrade_date",)
+
+
+def validate_dates(record: dict, as_of: Optional[datetime]) -> Optional[dict]:
+    """Null out impossible dates, recompute derived fields.
+
+    ``as_of`` is the comment's last edit (or creation) time; an event dated
+    after it can't have been reported in it, so it's a misparse or a typo.
+    Returns None when date_applied itself is impossible.
+    """
+    r = dict(record)
+    # +1 day: the poster's local date can be ahead of UTC (up to UTC+14).
+    ceiling = ((as_of or datetime.now()) + timedelta(days=1)).date().isoformat()
+    applied = r.get("date_applied")
+    if applied and applied > ceiling:
+        return None
+    for f in _PAST_EVENT_FIELDS:
+        v = r.get(f)
+        if not v:
+            continue
+        if applied and f in _AFTER_APPLIED_FIELDS and v < applied:
+            # Must fall between applying and writing. If a year off fits both,
+            # the year was mistyped ("approved 10th Jan 2025" for Jan 2026).
+            shifted = f"{int(v[:4]) + 1}{v[4:]}"
+            v = shifted if applied <= shifted <= ceiling else None
+        if v and v > ceiling:
+            v = None
+        r[f] = v
+    return compute_derived(r)
 
 
 def has_template_data(parsed: dict) -> bool:

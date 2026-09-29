@@ -41,8 +41,13 @@ Flags:
 - `--no-merge` ignores existing records and treats this run as the full set.
 - `-v` prints every matched record.
 - `-y` skips the confirmation prompt. Non-interactive runs such as CI skip it automatically.
+- `--check-threads` only lists OPT timeline megathreads that aren't in `THREADS` yet.
 
-Merge policy: freshly fetched comments overwrite stored ones, so edits (for example an approval date added later) are picked up. Comments that no longer come back from Reddit are kept. After a merge, records are deduped by `(author, date_applied)`, and any row that dedupe removed is also deleted from Supabase.
+A full fetch takes about 20 minutes, most of it waiting on Reddit's rate limit (roughly 100 requests per 10 minutes).
+
+Merge policy: freshly fetched comments overwrite stored ones, so edits (for example an approval date added later) are picked up. Comments that no longer come back from Reddit are kept. Then each author's posts are merged into one record per application (see `merge_by_author` in `exporter.py`), and rows merged away are deleted from Supabase.
+
+Parser tests: `uv run python -m unittest discover -s tests`. The daily job runs them before scraping.
 
 ## 3. Dashboard
 
@@ -57,7 +62,7 @@ The page is a single client component. It downloads the whole `timeline` table (
 
 ## 4. Daily cron
 
-`.github/workflows/update-data.yml` runs the scraper every day at 06:00 UTC and writes to Supabase. It never commits anything. Add these repository secrets:
+`.github/workflows/update-data.yml` runs the tests and the scraper every day at 06:00 UTC and writes to Supabase. It never commits anything. It then looks for new OPT timeline megathreads and opens (or updates) a GitHub issue listing any it finds; add the relevant ones as below, and the rest to `IGNORED_THREADS` in `config.py`. Add these repository secrets:
 
 - `SUPABASE_URL`
 - `SUPABASE_SECRET_KEY`
@@ -65,6 +70,16 @@ The page is a single client component. It downloads the whole `timeline` table (
 
 ## Adding a thread
 
-1. Add it to `THREADS` in `scraper/src/reddit_opt_scraper/config.py` (post ID, subreddit, year).
+1. Add it to `THREADS` in `scraper/src/reddit_opt_scraper/config.py` (post ID and subreddit).
 2. Add a matching entry to `THREAD_OPTIONS` in `dashboard/src/lib/types.ts`.
 3. If it should be selected by default, add its `id` to `DEFAULT_THREADS` in the same file.
+
+## Deploying changes
+
+The workflow doesn't touch the database schema. When a change adds a migration under `supabase/migrations/`, apply it before pushing, or the next scrape fails writing the new column:
+
+```bash
+supabase db push
+```
+
+Then push. The dashboard redeploys from the repo, and the next daily run (or a manual run from the Actions tab) uses the new scraper.
