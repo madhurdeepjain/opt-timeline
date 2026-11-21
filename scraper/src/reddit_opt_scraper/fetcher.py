@@ -22,6 +22,7 @@ from .config import USER_AGENT, REQUEST_DELAY
 
 _MAX_RETRIES = 6
 _RETRY_BASE = 60  # seconds for first 429 backoff if no Retry-After header
+_TRANSIENT_BASE = 10  # seconds for first 5xx / network-error backoff (capped at 120)
 _MAX_EXPAND_ATTEMPTS = 3  # times a single `more` id is requested before giving up
 
 _BASE_HEADERS = {
@@ -51,23 +52,38 @@ def _reddit_url(path: str, token: str | None) -> str:
     return base + path
 
 
+class AuthError(RuntimeError):
+    """Reddit rejected our credentials (403). Every later request will fail the same way."""
+
+
 def _get(client: httpx.Client, url: str, params: dict | None, headers: dict) -> dict:
+    """GET JSON, retrying 429s, 5xx and network errors. Anything else raises."""
+    last = ""
     for attempt in range(_MAX_RETRIES):
-        resp = client.get(url, params=params, headers=headers, follow_redirects=True, timeout=30.0)
-        if resp.status_code == 403:
-            raise RuntimeError(
-                f"403 Forbidden — Reddit rejected the request to {url}.\n"
-                "Check that REDDIT_COOKIE or REDDIT_TOKEN is set and not expired."
-            )
-        if resp.status_code == 429:
-            wait = int(resp.headers.get("Retry-After", _RETRY_BASE * (2 ** attempt)))
-            print(f"  [rate-limit] 429 — sleeping {wait}s (attempt {attempt + 1}/{_MAX_RETRIES})", flush=True)
-            time.sleep(wait)
-            continue
-        resp.raise_for_status()
-        _maybe_throttle(resp)
-        return resp.json()
-    raise RuntimeError(f"Gave up after {_MAX_RETRIES} retries: {url}")
+        try:
+            resp = client.get(url, params=params, headers=headers, follow_redirects=True, timeout=30.0)
+        except httpx.TransportError as exc:  # timeout, connection reset, SSL
+            last = f"{type(exc).__name__}: {exc}"
+        else:
+            if resp.status_code == 403:
+                raise AuthError(
+                    f"403 Forbidden — Reddit rejected the request to {url}.\n"
+                    "Check that REDDIT_COOKIE or REDDIT_TOKEN is set and not expired."
+                )
+            if resp.status_code == 429:
+                wait = int(resp.headers.get("Retry-After", _RETRY_BASE * (2 ** attempt)))
+                print(f"  [rate-limit] 429 — sleeping {wait}s (attempt {attempt + 1}/{_MAX_RETRIES})", flush=True)
+                time.sleep(wait)
+                continue
+            if resp.status_code < 500:
+                resp.raise_for_status()
+                _maybe_throttle(resp)
+                return resp.json()
+            last = f"HTTP {resp.status_code}"
+        wait = min(_TRANSIENT_BASE * (2 ** attempt), 120)
+        print(f"  [retry] {last} — sleeping {wait}s (attempt {attempt + 1}/{_MAX_RETRIES})", flush=True)
+        time.sleep(wait)
+    raise RuntimeError(f"Gave up after {_MAX_RETRIES} retries: {url} (last: {last})")
 
 
 def _maybe_throttle(resp: httpx.Response) -> None:
@@ -103,11 +119,7 @@ def _fetch_by_ids(client: httpx.Client, ids: list[str], headers: dict, token: st
     url = ("https://oauth.reddit.com" if token else "https://www.reddit.com") + ("/api/info" if token else "/api/info.json")
     out: dict[str, dict] = {}
     for i in range(0, len(ids), 100):
-        try:
-            data = _get(client, url, params={"id": ",".join(f"t1_{c}" for c in ids[i : i + 100]), "raw_json": 1}, headers=headers)
-        except Exception as exc:
-            print(f"  [warn] api/info lookup failed: {exc}", flush=True)
-            continue
+        data = _get(client, url, params={"id": ",".join(f"t1_{c}" for c in ids[i : i + 100]), "raw_json": 1}, headers=headers)
         for t in data.get("data", {}).get("children", []):
             d = t["data"]
             if d.get("parent_id", "").startswith("t3_"):
@@ -160,19 +172,12 @@ def _fetch_more_children(
             attempts[cid] = attempts.get(cid, 0) + 1
         batch_num += 1
         print(f"  [morechildren] batch {batch_num} ({len(batch)} ids, {len(queue)} queued)…", flush=True)
-        try:
-            data = _get(
-                client,
-                url,
-                params={"api_type": "json", "link_id": f"t3_{post_id}", "children": ",".join(batch)},
-                headers=headers,
-            )
-        except Exception as exc:
-            print(f"  [warn] morechildren batch {batch_num} failed: {exc}", flush=True)
-            for cid in batch:
-                enqueue(cid)
-            time.sleep(REQUEST_DELAY)
-            continue
+        data = _get(
+            client,
+            url,
+            params={"api_type": "json", "link_id": f"t3_{post_id}", "children": ",".join(batch)},
+            headers=headers,
+        )
 
         new = 0
         for t in data.get("json", {}).get("data", {}).get("things", []):

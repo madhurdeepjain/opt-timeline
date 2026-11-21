@@ -17,7 +17,7 @@ from rich.table import Table
 
 from . import supastore
 from .config import THREADS, IGNORED_THREADS, DEFAULT_OUTPUT, REQUEST_DELAY
-from .fetcher import fetch_all_comments, find_new_megathreads, is_gone, lookup_comments
+from .fetcher import AuthError, fetch_all_comments, find_new_megathreads, is_gone, lookup_comments
 from .parser import parse_comment, has_template_data, validate_dates
 from .exporter import ANON_PREFIX, load_existing, merge, merge_by_author, save
 
@@ -116,7 +116,6 @@ def cli(output: str, no_merge: bool, force_csv: bool, assume_yes: bool, check_th
     all_fresh: list[dict] = []
     fetched: set[str] = set()  # every top-level comment id Reddit returned
     gone: set[str] = set()     # confirmed deleted/removed (comment or account)
-    failed_threads: list[str] = []
 
     reddit_cookie = os.environ.get("REDDIT_COOKIE") or None
     reddit_token = os.environ.get("REDDIT_TOKEN") or None
@@ -156,22 +155,24 @@ def cli(output: str, no_merge: bool, force_csv: bool, assume_yes: bool, check_th
                                     f"{rec.get('date_applied')} → {rec.get('date_approved')}"
                                 )
                     prog.update(task, description=f"Done — {seen} comments, {parsed} matched template")
-                except Exception:
-                    console.print(f"[bold yellow]⚠ Error fetching r/{sub} ({post_id}) — skipping.[/bold yellow]")
-                    traceback.print_exc()
-                    failed_threads.append(post_id)
+                except Exception as exc:
+                    # Abort without writing: saving now would stamp a fresh
+                    # scraped_at on data this run couldn't refresh.
+                    prog.stop()
+                    if not isinstance(exc, AuthError):
+                        traceback.print_exc()
+                    console.print(f"[bold red]✗ Failed fetching r/{sub} ({post_id}): {exc}[/bold red]")
+                    console.print("[bold red]Aborting — nothing written.[/bold red]")
+                    raise SystemExit(1)
 
         # Stored rows whose comment didn't come back: ask Reddit about each one.
-        # Only a positive "deleted/removed" answer de-links a row; a failed fetch
-        # or lookup leaves it as it is.
+        # Only a positive "deleted/removed" answer de-links a row; a comment
+        # Reddit doesn't return leaves it as it is. A failed lookup aborts the run.
         unseen = [cid for cid in existing if cid not in fetched and not cid.startswith(ANON_PREFIX)]
         if unseen:
             console.print(f"\nChecking {len(unseen)} stored comments that weren't fetched…")
             found = lookup_comments(client, unseen, cookie=reddit_cookie, token=reddit_token)
             gone |= {cid for cid, c in found.items() if is_gone(c)}
-
-    if failed_threads:
-        console.print(f"\n[bold yellow]⚠ Skipped threads: {', '.join(failed_threads)}[/bold yellow]")
 
     if not all_fresh and not existing:
         console.print("[bold red]No data collected — nothing to save.[/bold red]")
